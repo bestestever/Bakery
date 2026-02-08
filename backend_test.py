@@ -84,7 +84,7 @@ class BakeryAPITester:
             params={"password": "bakery2024"}
         )
         
-        # Test invalid password
+        # Test invalid password (should return 401, which is correct behavior)
         fail_success, _ = self.run_test(
             "Admin Login - Invalid Password",
             "POST", 
@@ -93,7 +93,7 @@ class BakeryAPITester:
             params={"password": "wrongpassword"}
         )
         
-        return success and not fail_success
+        return success and fail_success
 
     def test_settings_management(self):
         """Test shop settings CRUD operations"""
