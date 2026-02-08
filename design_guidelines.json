@@ -1,0 +1,130 @@
+{
+  "identity": {
+    "name": "E1",
+    "role": "Creative Designer",
+    "tone": "Artisan, Warm, Clean, Trustworthy",
+    "theme_preference": "light"
+  },
+  "typography": {
+    "headings": {
+      "font_family": "Playfair Display, serif",
+      "usage": "Main headings, Product titles",
+      "weights": ["400", "700"],
+      "tracking": "tracking-tight"
+    },
+    "body": {
+      "font_family": "DM Sans, sans-serif",
+      "usage": "UI elements, descriptions, forms",
+      "weights": ["400", "500"],
+      "tracking": "tracking-normal"
+    },
+    "installation": "Import via Google Fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');"
+  },
+  "colors": {
+    "palette": {
+      "primary": "#9A3412",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#F5F5F4",
+      "secondary_foreground": "#1C1917",
+      "background": "#FAFAF9",
+      "foreground": "#1C1917",
+      "muted": "#E7E5E4",
+      "muted_foreground": "#57534E",
+      "accent": "#D6D3D1",
+      "border": "#E7E5E4",
+      "sold_out": "#A8A29E",
+      "success": "#15803D",
+      "error": "#B91C1C"
+    },
+    "usage": {
+      "primary": "Call to action buttons, key highlights",
+      "background": "Main page background (Warm Stone-50)",
+      "text": "Dark Stone-900 for readability",
+      "sold_out": "Disabled states, sold out badges"
+    }
+  },
+  "layout": {
+    "spacing_system": "Generous spacing (p-6, p-8, p-12) to create breathing room.",
+    "container": "max-w-5xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_strategy": "Responsive grid: grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 for products.",
+    "mobile_first": "Stack vertically on mobile, expand on desktop."
+  },
+  "components": {
+    "ProductCard": {
+      "style": "Clean card with subtle border, large image aspect-square or 4:3. Minimal shadow.",
+      "interactions": "Hover: slight lift (-translate-y-1), shadow-md.",
+      "sold_out_state": "Opacity-60, grayscale filter, 'Sold Out' badge overlay."
+    },
+    "OrderForm": {
+      "style": "Clean, single-column layout. Input fields with p-3 and subtle borders.",
+      "library": "Shadcn Form + Input + Textarea"
+    },
+    "AdminPanel": {
+      "style": "Functional, high-density table for inventory management. Simple toggle for 'Active' status.",
+      "library": "Shadcn Table + Switch + Input"
+    },
+    "SoldOutBadge": {
+      "style": "Absolute positioning, z-10, bg-stone-800 text-white px-3 py-1 text-sm font-bold uppercase tracking-widest."
+    }
+  },
+  "visual_enhancers": {
+    "texture": "Subtle grain overlay on background (optional) to enhance artisan feel.",
+    "shadows": "Soft, diffuse shadows: shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)].",
+    "border_radius": "rounded-xl for cards, rounded-lg for inputs/buttons."
+  },
+  "image_urls": {
+    "hero_background": "https://images.unsplash.com/photo-1633839043868-4bc3724e6e1c?crop=entropy&cs=srgb&fm=jpg&q=85",
+    "products": [
+      {
+        "category": "Sourdough",
+        "url": "https://images.unsplash.com/photo-1744217083335-8b57ec3826ac?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Rustic Sourdough Loaf"
+      },
+      {
+        "category": "Cookies",
+        "url": "https://images.unsplash.com/photo-1622296999725-fd6600a7603c?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Gourmet Chocolate Chip Cookies"
+      },
+      {
+        "category": "Muffins",
+        "url": "https://images.unsplash.com/photo-1694496982866-2def130bdfec?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Fresh Berry Muffins"
+      },
+      {
+        "category": "Pastries",
+        "url": "https://images.unsplash.com/photo-1756156250890-3663e3acbfc6?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Assorted Pastries"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Implement a 'Weekly Drop' concept: The homepage should clearly state 'Order for Pickup on [Date]'.",
+    "Product List: Iterate through products. If quantity == 0, show Sold Out state immediately.",
+    "Order Form: Simple validation. On submit, show a clean 'Thank You' confirmation with pickup details.",
+    "Admin: Protect with a simple password check (client-side or basic server auth is fine for MVP). Allow editing 'Quantity' and 'Price'.",
+    "Email: Mock the email sending or use a simple alert/toast to confirm 'Email sent to [user]'.",
+    "Use 'sonner' for all notifications (Order success, Sold out alert).",
+    "Ensure mobile responsiveness is perfect - most users will order from phones."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur)",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Create new components that match the style and conventions of existing components when needed",
+    "Examine existing components to understand the project's component patterns before creating new ones",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use 'sonner' for toasts",
+    "Sonner component are located in /app/src/components/ui/sonner.tsx"
+  ]
+}
