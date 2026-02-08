@@ -1,15 +1,16 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
-
+import secrets
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -19,52 +20,292 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
+# Create the main app
 app = FastAPI()
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+security = HTTPBasic()
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+# Get admin password from env
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+
+# ============= MODELS =============
+
+class Product(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    name: str
+    description: str
+    price: float
+    quantity: int  # Current available quantity
+    max_quantity: int  # Maximum quantity (for sell-out tracking)
+    image_url: str
+    active: bool = True
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+class ProductCreate(BaseModel):
+    name: str
+    description: str
+    price: float
+    quantity: int
+    max_quantity: int
+    image_url: str
+    active: bool = True
 
-# Add your routes to the router instead of directly to app
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    quantity: Optional[int] = None
+    max_quantity: Optional[int] = None
+    image_url: Optional[str] = None
+    active: Optional[bool] = None
+
+class OrderItem(BaseModel):
+    product_id: str
+    product_name: str
+    quantity: int
+    price: float
+
+class OrderCreate(BaseModel):
+    customer_name: str
+    email: EmailStr
+    phone: str
+    notes: Optional[str] = ""
+    items: List[OrderItem]
+
+class Order(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    customer_name: str
+    email: str
+    phone: str
+    notes: str
+    items: List[OrderItem]
+    total: float
+    status: str = "pending"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class ShopSettings(BaseModel):
+    id: str = "shop_settings"
+    shop_name: str = "Weekly Bakery"
+    pickup_info: str = "Pickup available Saturday 10am-2pm at 123 Main Street"
+    payment_info: str = "Payment via Venmo @bakery or cash at pickup"
+    email_message: str = "Thank you for your order! We look forward to seeing you."
+    weekly_date: str = ""
+
+class ShopSettingsUpdate(BaseModel):
+    shop_name: Optional[str] = None
+    pickup_info: Optional[str] = None
+    payment_info: Optional[str] = None
+    email_message: Optional[str] = None
+    weekly_date: Optional[str] = None
+
+# ============= AUTH =============
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_password = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not correct_password:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    return True
+
+# Simple password check endpoint
+@api_router.post("/admin/login")
+async def admin_login(password: str):
+    if password == ADMIN_PASSWORD:
+        return {"success": True}
+    raise HTTPException(status_code=401, detail="Invalid password")
+
+# ============= PRODUCTS =============
+
+@api_router.get("/products", response_model=List[Product])
+async def get_products():
+    products = await db.products.find({}, {"_id": 0}).to_list(100)
+    return products
+
+@api_router.get("/products/active", response_model=List[Product])
+async def get_active_products():
+    products = await db.products.find({"active": True}, {"_id": 0}).to_list(100)
+    return products
+
+@api_router.get("/products/{product_id}", response_model=Product)
+async def get_product(product_id: str):
+    product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+@api_router.post("/products", response_model=Product)
+async def create_product(product: ProductCreate):
+    product_obj = Product(**product.model_dump())
+    doc = product_obj.model_dump()
+    await db.products.insert_one(doc)
+    return product_obj
+
+@api_router.put("/products/{product_id}", response_model=Product)
+async def update_product(product_id: str, product: ProductUpdate):
+    update_data = {k: v for k, v in product.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    result = await db.products.update_one({"id": product_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    updated_product = await db.products.find_one({"id": product_id}, {"_id": 0})
+    return updated_product
+
+@api_router.delete("/products/{product_id}")
+async def delete_product(product_id: str):
+    result = await db.products.delete_one({"id": product_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return {"message": "Product deleted"}
+
+# ============= ORDERS =============
+
+@api_router.post("/orders", response_model=Order)
+async def create_order(order: OrderCreate):
+    # Check product availability and update quantities
+    total = 0.0
+    for item in order.items:
+        product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+        if product["quantity"] < item.quantity:
+            raise HTTPException(status_code=400, detail=f"{product['name']} is sold out or insufficient quantity")
+        total += item.price * item.quantity
+    
+    # Reduce quantities
+    for item in order.items:
+        await db.products.update_one(
+            {"id": item.product_id},
+            {"$inc": {"quantity": -item.quantity}}
+        )
+    
+    # Create order
+    order_obj = Order(
+        customer_name=order.customer_name,
+        email=order.email,
+        phone=order.phone,
+        notes=order.notes or "",
+        items=[item.model_dump() for item in order.items],
+        total=total
+    )
+    
+    doc = order_obj.model_dump()
+    await db.orders.insert_one(doc)
+    
+    # Send confirmation email
+    await send_order_confirmation(order_obj)
+    
+    return order_obj
+
+@api_router.get("/orders", response_model=List[Order])
+async def get_orders():
+    orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return orders
+
+@api_router.put("/orders/{order_id}/status")
+async def update_order_status(order_id: str, status: str):
+    result = await db.orders.update_one({"id": order_id}, {"$set": {"status": status}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"message": "Status updated"}
+
+# ============= SETTINGS =============
+
+@api_router.get("/settings", response_model=ShopSettings)
+async def get_settings():
+    settings = await db.settings.find_one({"id": "shop_settings"}, {"_id": 0})
+    if not settings:
+        # Create default settings
+        default_settings = ShopSettings()
+        await db.settings.insert_one(default_settings.model_dump())
+        return default_settings
+    return settings
+
+@api_router.put("/settings", response_model=ShopSettings)
+async def update_settings(settings: ShopSettingsUpdate):
+    update_data = {k: v for k, v in settings.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    
+    result = await db.settings.update_one(
+        {"id": "shop_settings"},
+        {"$set": update_data},
+        upsert=True
+    )
+    
+    updated_settings = await db.settings.find_one({"id": "shop_settings"}, {"_id": 0})
+    return updated_settings
+
+# ============= EMAIL =============
+
+async def send_order_confirmation(order: Order):
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        
+        settings = await db.settings.find_one({"id": "shop_settings"}, {"_id": 0})
+        if not settings:
+            settings = ShopSettings().model_dump()
+        
+        api_key = os.environ.get('EMERGENT_LLM_KEY')
+        if not api_key:
+            logger.warning("No EMERGENT_LLM_KEY found, skipping email")
+            return
+        
+        # Build order items list
+        items_text = "\n".join([f"- {item['product_name']} x{item['quantity']} - ${item['price'] * item['quantity']:.2f}" for item in order.items])
+        
+        # Use LLM to generate personalized email
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"order-email-{order.id}",
+            system_message="You are a friendly bakery assistant. Generate a warm, personalized order confirmation email. Keep it concise and friendly."
+        ).with_model("openai", "gpt-5.2")
+        
+        prompt = f"""Generate a brief, warm order confirmation email for:
+
+Customer: {order.customer_name}
+Order Items:
+{items_text}
+Total: ${order.total:.2f}
+
+Include this pickup information: {settings.get('pickup_info', 'Pickup details coming soon')}
+Include this payment information: {settings.get('payment_info', 'Payment details coming soon')}
+Additional message from bakery: {settings.get('email_message', 'Thank you!')}
+
+Keep it short, warm, and personal. Don't use emojis excessively."""
+
+        user_message = UserMessage(text=prompt)
+        email_content = await chat.send_message(user_message)
+        
+        # Log the email (in production, integrate with actual email service)
+        logger.info(f"Order confirmation email for {order.email}:\n{email_content}")
+        
+        # Store email in database for reference
+        await db.emails.insert_one({
+            "id": str(uuid.uuid4()),
+            "order_id": order.id,
+            "to": order.email,
+            "subject": f"Order Confirmation - {settings.get('shop_name', 'Bakery')}",
+            "content": email_content,
+            "sent_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
+
+# ============= HEALTH CHECK =============
+
 @api_router.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"message": "Bakery Shop API", "status": "healthy"}
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
-    return status_checks
+@api_router.get("/health")
+async def health():
+    return {"status": "healthy"}
 
 # Include the router in the main app
 app.include_router(api_router)
