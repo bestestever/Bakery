@@ -191,13 +191,13 @@ export default function AdminPage() {
   const handleEditProduct = (product) => {
     setEditingProduct(product);
     setNewProduct({
-      name: product.name,
-      description: product.description,
-      price: product.price.toString(),
-      quantity: product.quantity.toString(),
-      max_quantity: product.max_quantity.toString(),
-      image_url: product.image_url,
-      active: product.active,
+      name: product.name || "",
+      description: product.description || "",
+      price: (product.price || 0).toString(),
+      quantity: (product.quantity || 0).toString(),
+      max_quantity: (product.max_quantity || 0).toString(),
+      image_url: product.image_url || "",
+      active: product.active !== false,
     });
     setProductDialogOpen(true);
   };
