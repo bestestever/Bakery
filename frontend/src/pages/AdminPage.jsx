@@ -16,6 +16,15 @@ import {
   Loader2,
   Store,
   ArrowLeft,
+  Archive,
+  BarChart3,
+  Calendar,
+  DollarSign,
+  TrendingUp,
+  CheckCircle,
+  XCircle,
+  Clock,
+  ArchiveRestore,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +48,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -49,8 +65,11 @@ export default function AdminPage() {
   
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [archivedOrders, setArchivedOrders] = useState([]);
   const [settings, setSettings] = useState({});
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
   
   const [editingProduct, setEditingProduct] = useState(null);
   const [productDialogOpen, setProductDialogOpen] = useState(false);
@@ -103,14 +122,18 @@ export default function AdminPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [productsRes, ordersRes, settingsRes] = await Promise.all([
+      const [productsRes, ordersRes, archivedRes, settingsRes, statsRes] = await Promise.all([
         axios.get(`${API}/products`),
-        axios.get(`${API}/orders`),
+        axios.get(`${API}/orders?archived=false`),
+        axios.get(`${API}/orders?archived=true`),
         axios.get(`${API}/settings`),
+        axios.get(`${API}/orders/stats`),
       ]);
       setProducts(productsRes.data);
       setOrders(ordersRes.data);
+      setArchivedOrders(archivedRes.data);
       setSettings(settingsRes.data);
+      setStats(statsRes.data);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Failed to load data");
@@ -226,6 +249,59 @@ export default function AdminPage() {
     }
   };
 
+  const handleArchiveOrder = async (orderId) => {
+    try {
+      await axios.put(`${API}/orders/${orderId}/archive`);
+      toast.success("Order archived");
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to archive order");
+    }
+  };
+
+  const handleUnarchiveOrder = async (orderId) => {
+    try {
+      await axios.put(`${API}/orders/${orderId}/unarchive`);
+      toast.success("Order restored");
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to restore order");
+    }
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    if (!window.confirm("Are you sure you want to permanently delete this order?")) return;
+    
+    try {
+      await axios.delete(`${API}/orders/${orderId}`);
+      toast.success("Order deleted");
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to delete order");
+    }
+  };
+
+  // Group orders by date
+  const groupOrdersByDate = (ordersList) => {
+    const grouped = {};
+    ordersList.forEach((order) => {
+      const date = new Date(order.created_at).toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      if (!grouped[date]) {
+        grouped[date] = [];
+      }
+      grouped[date].push(order);
+    });
+    return grouped;
+  };
+
+  const groupedOrders = groupOrdersByDate(showArchived ? archivedOrders : orders);
+  const displayOrders = showArchived ? archivedOrders : orders;
+
   // Login Screen
   if (!isAuthenticated) {
     return (
@@ -331,6 +407,10 @@ export default function AdminPage() {
               <TabsTrigger value="orders" className="rounded-lg" data-testid="tab-orders">
                 <ClipboardList className="w-4 h-4 mr-2" />
                 Orders ({orders.length})
+              </TabsTrigger>
+              <TabsTrigger value="stats" className="rounded-lg" data-testid="tab-stats">
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Stats
               </TabsTrigger>
               <TabsTrigger value="settings" className="rounded-lg" data-testid="tab-settings">
                 <Settings className="w-4 h-4 mr-2" />
@@ -600,89 +680,419 @@ export default function AdminPage() {
             {/* Orders Tab */}
             <TabsContent value="orders">
               <div className="admin-card">
-                <div className="p-6 border-b border-stone-200">
+                <div className="p-6 border-b border-stone-200 flex items-center justify-between">
                   <h2 className="font-heading text-xl font-semibold text-stone-900">
-                    Recent Orders
+                    {showArchived ? "Archived Orders" : "Active Orders"}
                   </h2>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant={showArchived ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setShowArchived(!showArchived)}
+                      className="rounded-lg"
+                      data-testid="toggle-archived-btn"
+                    >
+                      {showArchived ? (
+                        <>
+                          <ClipboardList className="w-4 h-4 mr-2" />
+                          View Active ({orders.length})
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="w-4 h-4 mr-2" />
+                          View Archived ({archivedOrders.length})
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
                 
-                {orders.length === 0 ? (
+                {displayOrders.length === 0 ? (
                   <div className="p-12 text-center">
                     <ClipboardList className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-                    <p className="text-stone-500">No orders yet.</p>
+                    <p className="text-stone-500">
+                      {showArchived ? "No archived orders." : "No active orders."}
+                    </p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-stone-200" data-testid="orders-list">
-                    {orders.map((order) => (
-                      <div key={order.id} className="p-6" data-testid={`order-${order.id}`}>
-                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-medium text-stone-900">
-                                {order.customer_name}
-                              </h3>
-                              <Badge
-                                className={
-                                  order.status === "completed"
-                                    ? "bg-green-100 text-green-700"
-                                    : order.status === "cancelled"
-                                    ? "bg-red-100 text-red-700"
-                                    : "bg-yellow-100 text-yellow-700"
-                                }
-                              >
-                                {order.status}
-                              </Badge>
+                  <div data-testid="orders-list">
+                    {Object.entries(groupedOrders).map(([date, dateOrders]) => (
+                      <div key={date}>
+                        <div className="px-6 py-3 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
+                          <Calendar className="w-4 h-4 text-stone-500" />
+                          <span className="font-medium text-stone-700">{date}</span>
+                          <Badge variant="secondary" className="ml-2">
+                            {dateOrders.length} order{dateOrders.length !== 1 ? "s" : ""}
+                          </Badge>
+                        </div>
+                        <div className="divide-y divide-stone-200">
+                          {dateOrders.map((order) => (
+                            <div key={order.id} className="p-6" data-testid={`order-${order.id}`}>
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                <div>
+                                  <div className="flex items-center gap-3 mb-2">
+                                    <h3 className="font-medium text-stone-900">
+                                      {order.customer_name}
+                                    </h3>
+                                    <Badge
+                                      className={
+                                        order.status === "completed"
+                                          ? "bg-green-100 text-green-700"
+                                          : order.status === "cancelled"
+                                          ? "bg-red-100 text-red-700"
+                                          : "bg-yellow-100 text-yellow-700"
+                                      }
+                                    >
+                                      {order.status}
+                                    </Badge>
+                                    {order.archived && (
+                                      <Badge variant="secondary">
+                                        <Archive className="w-3 h-3 mr-1" />
+                                        Archived
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-sm text-stone-600">{order.email}</p>
+                                  <p className="text-sm text-stone-600">{order.phone}</p>
+                                  {order.notes && (
+                                    <p className="text-sm text-stone-500 mt-2 italic">
+                                      "{order.notes}"
+                                    </p>
+                                  )}
+                                  <div className="mt-3 space-y-1">
+                                    {order.items.map((item, idx) => (
+                                      <p key={idx} className="text-sm text-stone-700">
+                                        {item.quantity}x {item.product_name} - ${(item.price * item.quantity).toFixed(2)}
+                                      </p>
+                                    ))}
+                                    <p className="font-medium text-stone-900 mt-2">
+                                      Total: ${order.total.toFixed(2)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col gap-2 sm:items-end">
+                                  <p className="text-xs text-stone-500">
+                                    {new Date(order.created_at).toLocaleTimeString()}
+                                  </p>
+                                  <div className="flex gap-2 flex-wrap">
+                                    {!showArchived && (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleUpdateOrderStatus(order.id, "completed")}
+                                          disabled={order.status === "completed"}
+                                          className="rounded-lg text-green-700"
+                                          data-testid={`complete-order-${order.id}`}
+                                        >
+                                          <CheckCircle className="w-4 h-4 mr-1" />
+                                          Complete
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleUpdateOrderStatus(order.id, "cancelled")}
+                                          disabled={order.status === "cancelled"}
+                                          className="rounded-lg text-red-700"
+                                          data-testid={`cancel-order-${order.id}`}
+                                        >
+                                          <XCircle className="w-4 h-4 mr-1" />
+                                          Cancel
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleArchiveOrder(order.id)}
+                                          className="rounded-lg"
+                                          data-testid={`archive-order-${order.id}`}
+                                        >
+                                          <Archive className="w-4 h-4 mr-1" />
+                                          Archive
+                                        </Button>
+                                      </>
+                                    )}
+                                    {showArchived && (
+                                      <>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleUnarchiveOrder(order.id)}
+                                          className="rounded-lg"
+                                          data-testid={`unarchive-order-${order.id}`}
+                                        >
+                                          <ArchiveRestore className="w-4 h-4 mr-1" />
+                                          Restore
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleDeleteOrder(order.id)}
+                                          className="rounded-lg text-red-700"
+                                          data-testid={`delete-order-${order.id}`}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-1" />
+                                          Delete
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <p className="text-sm text-stone-600">{order.email}</p>
-                            <p className="text-sm text-stone-600">{order.phone}</p>
-                            {order.notes && (
-                              <p className="text-sm text-stone-500 mt-2 italic">
-                                "{order.notes}"
-                              </p>
-                            )}
-                            <div className="mt-3 space-y-1">
-                              {order.items.map((item, idx) => (
-                                <p key={idx} className="text-sm text-stone-700">
-                                  {item.quantity}x {item.product_name} - ${(item.price * item.quantity).toFixed(2)}
-                                </p>
-                              ))}
-                              <p className="font-medium text-stone-900 mt-2">
-                                Total: ${order.total.toFixed(2)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2 sm:items-end">
-                            <p className="text-xs text-stone-500">
-                              {new Date(order.created_at).toLocaleString()}
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleUpdateOrderStatus(order.id, "completed")}
-                                disabled={order.status === "completed"}
-                                className="rounded-lg text-green-700"
-                                data-testid={`complete-order-${order.id}`}
-                              >
-                                Complete
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleUpdateOrderStatus(order.id, "cancelled")}
-                                disabled={order.status === "cancelled"}
-                                className="rounded-lg text-red-700"
-                                data-testid={`cancel-order-${order.id}`}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </div>
+                          ))}
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
+              </div>
+            </TabsContent>
+
+            {/* Stats Tab */}
+            <TabsContent value="stats">
+              <div className="space-y-6">
+                {/* Current Week Stats */}
+                <div>
+                  <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
+                    This Week
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card data-testid="current-week-revenue">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4" />
+                          Total Revenue
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          ${stats?.current_week?.total_revenue?.toFixed(2) || "0.00"}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          ${stats?.current_week?.completed_revenue?.toFixed(2) || "0.00"} completed
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="current-week-orders">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <ClipboardList className="w-4 h-4" />
+                          Total Orders
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          {stats?.current_week?.total_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="current-week-completed">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          Completed
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-green-600">
+                          {stats?.current_week?.completed_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="current-week-pending">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-yellow-600" />
+                          Pending
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-yellow-600">
+                          {stats?.current_week?.pending_orders || 0}
+                        </p>
+                        <p className="text-xs text-red-600 mt-1">
+                          {stats?.current_week?.cancelled_orders || 0} cancelled
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Daily breakdown for current week */}
+                  {stats?.current_week?.orders_by_date && Object.keys(stats.current_week.orders_by_date).length > 0 && (
+                    <Card className="mt-4">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Daily Breakdown</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {Object.entries(stats.current_week.orders_by_date)
+                            .sort((a, b) => b[0].localeCompare(a[0]))
+                            .map(([date, data]) => (
+                              <div key={date} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                                <span className="text-stone-700">{new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-sm text-stone-500">{data.count} orders</span>
+                                  <span className="font-medium text-stone-900">${data.revenue.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+
+                {/* Previous Week Stats */}
+                <div>
+                  <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
+                    Previous Week
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card data-testid="previous-week-revenue">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4" />
+                          Total Revenue
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          ${stats?.previous_week?.total_revenue?.toFixed(2) || "0.00"}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          ${stats?.previous_week?.completed_revenue?.toFixed(2) || "0.00"} completed
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="previous-week-orders">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <ClipboardList className="w-4 h-4" />
+                          Total Orders
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          {stats?.previous_week?.total_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="previous-week-completed">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          Completed
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-green-600">
+                          {stats?.previous_week?.completed_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="previous-week-cancelled">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <XCircle className="w-4 h-4 text-red-600" />
+                          Cancelled
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-red-600">
+                          {stats?.previous_week?.cancelled_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  
+                  {/* Daily breakdown for previous week */}
+                  {stats?.previous_week?.orders_by_date && Object.keys(stats.previous_week.orders_by_date).length > 0 && (
+                    <Card className="mt-4">
+                      <CardHeader>
+                        <CardTitle className="text-lg">Daily Breakdown</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          {Object.entries(stats.previous_week.orders_by_date)
+                            .sort((a, b) => b[0].localeCompare(a[0]))
+                            .map(([date, data]) => (
+                              <div key={date} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                                <span className="text-stone-700">{new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
+                                <div className="flex items-center gap-4">
+                                  <span className="text-sm text-stone-500">{data.count} orders</span>
+                                  <span className="font-medium text-stone-900">${data.revenue.toFixed(2)}</span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+
+                {/* All Time Stats */}
+                <div>
+                  <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
+                    All Time
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card data-testid="all-time-revenue">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4" />
+                          Total Revenue
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          ${stats?.all_time?.total_revenue?.toFixed(2) || "0.00"}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          ${stats?.all_time?.completed_revenue?.toFixed(2) || "0.00"} completed
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="all-time-orders">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <ClipboardList className="w-4 h-4" />
+                          Total Orders
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-stone-900">
+                          {stats?.all_time?.total_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="all-time-completed">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-600" />
+                          Completed
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-green-600">
+                          {stats?.all_time?.completed_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card data-testid="all-time-cancelled">
+                      <CardHeader className="pb-2">
+                        <CardDescription className="flex items-center gap-2">
+                          <XCircle className="w-4 h-4 text-red-600" />
+                          Cancelled
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-2xl font-bold text-red-600">
+                          {stats?.all_time?.cancelled_orders || 0}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 
