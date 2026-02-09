@@ -119,16 +119,26 @@ class BakeryAPITester:
         return success1 and success2
 
     def test_product_management(self):
-        """Test product CRUD operations"""
-        # Create a test product
+        """Test product CRUD operations with date-based availability"""
+        # Create a test product with date availability
         product_data = {
             "name": "Test Sourdough",
             "description": "Test description for sourdough bread",
             "price": 12.50,
-            "quantity": 5,
-            "max_quantity": 10,
             "image_url": "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400",
-            "active": True
+            "active": True,
+            "availability": [
+                {
+                    "date": "2025-01-15",
+                    "quantity": 5,
+                    "max_quantity": 10
+                },
+                {
+                    "date": "2025-01-16",
+                    "quantity": 3,
+                    "max_quantity": 8
+                }
+            ]
         }
         
         success1, product = self.run_test(
