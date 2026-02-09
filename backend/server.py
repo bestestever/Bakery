@@ -261,6 +261,62 @@ async def get_all_orders():
     orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return orders
 
+@api_router.get("/orders/stats")
+async def get_order_stats():
+    # Get all orders
+    all_orders = await db.orders.find({}, {"_id": 0}).to_list(10000)
+    
+    # Group by pickup date
+    stats_by_date = {}
+    
+    for order in all_orders:
+        pickup_date = order.get("pickup_date", "Unknown")
+        if pickup_date not in stats_by_date:
+            stats_by_date[pickup_date] = {
+                "date": pickup_date,
+                "total_orders": 0,
+                "completed_orders": 0,
+                "cancelled_orders": 0,
+                "pending_orders": 0,
+                "total_revenue": 0.0,
+                "completed_revenue": 0.0,
+                "orders": []
+            }
+        
+        stats = stats_by_date[pickup_date]
+        stats["total_orders"] += 1
+        total = order.get("total", 0)
+        status = order.get("status", "pending")
+        
+        stats["total_revenue"] += total
+        if status == "completed":
+            stats["completed_orders"] += 1
+            stats["completed_revenue"] += total
+        elif status == "cancelled":
+            stats["cancelled_orders"] += 1
+        else:
+            stats["pending_orders"] += 1
+        
+        stats["orders"].append(order)
+    
+    # Sort by date descending
+    sorted_stats = sorted(stats_by_date.values(), key=lambda x: x["date"], reverse=True)
+    
+    # Calculate totals
+    totals = {
+        "total_orders": sum(s["total_orders"] for s in sorted_stats),
+        "completed_orders": sum(s["completed_orders"] for s in sorted_stats),
+        "cancelled_orders": sum(s["cancelled_orders"] for s in sorted_stats),
+        "pending_orders": sum(s["pending_orders"] for s in sorted_stats),
+        "total_revenue": sum(s["total_revenue"] for s in sorted_stats),
+        "completed_revenue": sum(s["completed_revenue"] for s in sorted_stats),
+    }
+    
+    return {
+        "by_date": sorted_stats,
+        "totals": totals
+    }
+
 @api_router.get("/orders/{order_id}", response_model=Order)
 async def get_order(order_id: str):
     order = await db.orders.find_one({"id": order_id}, {"_id": 0})
