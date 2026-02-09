@@ -46,23 +46,27 @@ URL that I can send to people for an online shop with 5 to 10 customizable optio
    - Settings: GET/PUT
    - Admin login
 
-## What's Been Implemented (Feb 9, 2026)
-1. **Order Archiving**
-   - Archive old orders to keep active list clean
-   - Toggle between Active/Archived orders view
-   - Restore archived orders if needed
-   - Permanently delete archived orders
+## What's Been Implemented (Feb 9, 2026) - Update 2
+1. **Date-Based Product Availability**
+   - Products now have availability per date instead of single quantity
+   - Admin can add multiple dates with different quantities for each product
+   - Shop shows products filtered by selected pickup date
 
-2. **Orders Grouped by Date**
-   - Orders displayed in date sections with calendar headers
-   - Better organization for weekly order management
+2. **Improved Stats Page**
+   - Stats cleared (all previous orders deleted)
+   - Orders grouped by pickup date with expandable sections
+   - Click to expand and see all orders for a date
+   - Edit button on each order for quick edits
+   - Revenue and order counts per pickup date
 
-3. **Stats Page**
-   - This Week: Revenue, total orders, completed, pending, cancelled
-   - Previous Week: Same metrics for comparison
-   - All Time: Cumulative stats
-   - Daily breakdown for each week
-   - Stats update automatically when orders are cancelled/deleted
+3. **Order Editing**
+   - Edit order dialog accessible from Orders tab and Stats tab
+   - Update customer name, email, phone, notes, status
+
+4. **Shop Page Date Selector**
+   - Dropdown to select pickup date
+   - Products filter to show only items available on selected date
+   - Cart groups items by pickup date
 
 ## Prioritized Backlog
 ### P0 (Critical) - DONE
