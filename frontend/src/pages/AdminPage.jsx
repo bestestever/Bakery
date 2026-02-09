@@ -964,6 +964,15 @@ export default function AdminPage() {
                                         >
                                           <Archive className="w-4 h-4" />
                                         </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleDeleteOrder(order.id)}
+                                          className="rounded-lg text-red-700"
+                                          data-testid={`delete-active-order-${order.id}`}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </Button>
                                       </>
                                     )}
                                     {showArchived && (
