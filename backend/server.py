@@ -269,6 +269,11 @@ async def get_order_stats():
     # Group by pickup date
     stats_by_date = {}
     
+    # Weekly, monthly, yearly aggregations
+    weekly_stats = {}
+    monthly_stats = {}
+    yearly_stats = {}
+    
     for order in all_orders:
         pickup_date = order.get("pickup_date", "Unknown")
         if pickup_date not in stats_by_date:
@@ -288,7 +293,9 @@ async def get_order_stats():
         total = order.get("total", 0)
         status = order.get("status", "pending")
         
-        stats["total_revenue"] += total
+        # Only count non-cancelled orders in revenue
+        if status != "cancelled":
+            stats["total_revenue"] += total
         if status == "completed":
             stats["completed_orders"] += 1
             stats["completed_revenue"] += total
@@ -298,11 +305,65 @@ async def get_order_stats():
             stats["pending_orders"] += 1
         
         stats["orders"].append(order)
+        
+        # Aggregate by week, month, year (based on pickup_date)
+        if pickup_date and pickup_date != "Unknown":
+            try:
+                date_obj = datetime.strptime(pickup_date, "%Y-%m-%d")
+                
+                # Week key (ISO week)
+                week_key = date_obj.strftime("%Y-W%W")
+                week_start = date_obj - timedelta(days=date_obj.weekday())
+                week_label = f"Week of {week_start.strftime('%b %d, %Y')}"
+                
+                if week_key not in weekly_stats:
+                    weekly_stats[week_key] = {"label": week_label, "revenue": 0.0, "orders": 0, "completed": 0, "cancelled": 0}
+                weekly_stats[week_key]["orders"] += 1
+                if status != "cancelled":
+                    weekly_stats[week_key]["revenue"] += total
+                if status == "completed":
+                    weekly_stats[week_key]["completed"] += 1
+                elif status == "cancelled":
+                    weekly_stats[week_key]["cancelled"] += 1
+                
+                # Month key
+                month_key = date_obj.strftime("%Y-%m")
+                month_label = date_obj.strftime("%B %Y")
+                
+                if month_key not in monthly_stats:
+                    monthly_stats[month_key] = {"label": month_label, "revenue": 0.0, "orders": 0, "completed": 0, "cancelled": 0}
+                monthly_stats[month_key]["orders"] += 1
+                if status != "cancelled":
+                    monthly_stats[month_key]["revenue"] += total
+                if status == "completed":
+                    monthly_stats[month_key]["completed"] += 1
+                elif status == "cancelled":
+                    monthly_stats[month_key]["cancelled"] += 1
+                
+                # Year key
+                year_key = date_obj.strftime("%Y")
+                
+                if year_key not in yearly_stats:
+                    yearly_stats[year_key] = {"label": year_key, "revenue": 0.0, "orders": 0, "completed": 0, "cancelled": 0}
+                yearly_stats[year_key]["orders"] += 1
+                if status != "cancelled":
+                    yearly_stats[year_key]["revenue"] += total
+                if status == "completed":
+                    yearly_stats[year_key]["completed"] += 1
+                elif status == "cancelled":
+                    yearly_stats[year_key]["cancelled"] += 1
+            except:
+                pass
     
     # Sort by date descending
     sorted_stats = sorted(stats_by_date.values(), key=lambda x: x["date"], reverse=True)
     
-    # Calculate totals
+    # Sort aggregations
+    sorted_weekly = sorted(weekly_stats.items(), key=lambda x: x[0], reverse=True)
+    sorted_monthly = sorted(monthly_stats.items(), key=lambda x: x[0], reverse=True)
+    sorted_yearly = sorted(yearly_stats.items(), key=lambda x: x[0], reverse=True)
+    
+    # Calculate totals (exclude cancelled from revenue)
     totals = {
         "total_orders": sum(s["total_orders"] for s in sorted_stats),
         "completed_orders": sum(s["completed_orders"] for s in sorted_stats),
@@ -314,6 +375,9 @@ async def get_order_stats():
     
     return {
         "by_date": sorted_stats,
+        "by_week": [{"key": k, **v} for k, v in sorted_weekly],
+        "by_month": [{"key": k, **v} for k, v in sorted_monthly],
+        "by_year": [{"key": k, **v} for k, v in sorted_yearly],
         "totals": totals
     }
 
