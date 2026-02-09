@@ -7,7 +7,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 import secrets
@@ -33,50 +33,46 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
 
 # ============= MODELS =============
 
-class DateAvailability(BaseModel):
-    date: str  # Format: YYYY-MM-DD
-    quantity: int
-    max_quantity: int
-
 class Product(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: str
     price: float
+    quantity: int  # Current available quantity
+    max_quantity: int  # Maximum quantity (for sell-out tracking)
     image_url: str
     active: bool = True
-    availability: List[DateAvailability] = []  # Date-specific availability
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class ProductCreate(BaseModel):
     name: str
     description: str
     price: float
+    quantity: int
+    max_quantity: int
     image_url: str
     active: bool = True
-    availability: List[DateAvailability] = []
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
+    quantity: Optional[int] = None
+    max_quantity: Optional[int] = None
     image_url: Optional[str] = None
     active: Optional[bool] = None
-    availability: Optional[List[DateAvailability]] = None
 
 class OrderItem(BaseModel):
     product_id: str
     product_name: str
     quantity: int
     price: float
-    pickup_date: str  # Which date this item is for
 
 class OrderCreate(BaseModel):
     customer_name: str
     email: EmailStr
     phone: str
     notes: Optional[str] = ""
-    pickup_date: str  # Selected pickup date
     items: List[OrderItem]
 
 class OrderUpdate(BaseModel):
@@ -92,12 +88,12 @@ class Order(BaseModel):
     email: str
     phone: str
     notes: str
-    pickup_date: str
     items: List[OrderItem]
     total: float
     status: str = "pending"
     archived: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    order_date: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 
 class ShopSettings(BaseModel):
     id: str = "shop_settings"
@@ -105,14 +101,12 @@ class ShopSettings(BaseModel):
     pickup_info: str = "Pickup available Saturday 10am-2pm at 123 Main Street"
     payment_info: str = "Payment via Venmo @bakery or cash at pickup"
     email_message: str = "Thank you for your order! We look forward to seeing you."
-    available_dates: List[str] = []  # List of available pickup dates
 
 class ShopSettingsUpdate(BaseModel):
     shop_name: Optional[str] = None
     pickup_info: Optional[str] = None
     payment_info: Optional[str] = None
     email_message: Optional[str] = None
-    available_dates: Optional[List[str]] = None
 
 # ============= AUTH =============
 
@@ -122,7 +116,6 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return True
 
-# Simple password check endpoint
 @api_router.post("/admin/login")
 async def admin_login(password: str):
     if password == ADMIN_PASSWORD:
@@ -140,23 +133,6 @@ async def get_products():
 async def get_active_products():
     products = await db.products.find({"active": True}, {"_id": 0}).to_list(100)
     return products
-
-@api_router.get("/products/by-date/{date}")
-async def get_products_by_date(date: str):
-    """Get products available on a specific date with their quantities"""
-    products = await db.products.find({"active": True}, {"_id": 0}).to_list(100)
-    available_products = []
-    for product in products:
-        for avail in product.get("availability", []):
-            if avail["date"] == date:
-                available_products.append({
-                    **product,
-                    "quantity": avail["quantity"],
-                    "max_quantity": avail["max_quantity"],
-                    "pickup_date": date
-                })
-                break
-    return available_products
 
 @api_router.get("/products/{product_id}", response_model=Product)
 async def get_product(product_id: str):
@@ -178,10 +154,6 @@ async def update_product(product_id: str, product: ProductUpdate):
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
     
-    # Handle availability as a list of dicts
-    if "availability" in update_data:
-        update_data["availability"] = [a.model_dump() if hasattr(a, 'model_dump') else a for a in update_data["availability"]]
-    
     result = await db.products.update_one({"id": product_id}, {"$set": update_data})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -200,47 +172,34 @@ async def delete_product(product_id: str):
 
 @api_router.post("/orders", response_model=Order)
 async def create_order(order: OrderCreate):
-    # Check product availability and update quantities for the specific date
+    # Check product availability and update quantities
     total = 0.0
     for item in order.items:
         product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-        
-        # Find availability for the pickup date
-        date_avail = None
-        for avail in product.get("availability", []):
-            if avail["date"] == order.pickup_date:
-                date_avail = avail
-                break
-        
-        if not date_avail or date_avail["quantity"] < item.quantity:
-            raise HTTPException(status_code=400, detail=f"{product['name']} is sold out or insufficient quantity for {order.pickup_date}")
-        
+        if product["quantity"] < item.quantity:
+            raise HTTPException(status_code=400, detail=f"{product['name']} is sold out or insufficient quantity")
         total += item.price * item.quantity
     
-    # Reduce quantities for the specific date
+    # Reduce quantities
     for item in order.items:
-        product = await db.products.find_one({"id": item.product_id}, {"_id": 0})
-        new_availability = []
-        for avail in product.get("availability", []):
-            if avail["date"] == order.pickup_date:
-                avail["quantity"] = avail["quantity"] - item.quantity
-            new_availability.append(avail)
         await db.products.update_one(
             {"id": item.product_id},
-            {"$set": {"availability": new_availability}}
+            {"$inc": {"quantity": -item.quantity}}
         )
     
-    # Create order
+    # Create order with order_date
+    now = datetime.now(timezone.utc)
     order_obj = Order(
         customer_name=order.customer_name,
         email=order.email,
         phone=order.phone,
         notes=order.notes or "",
-        pickup_date=order.pickup_date,
         items=[item.model_dump() for item in order.items],
-        total=total
+        total=total,
+        created_at=now.isoformat(),
+        order_date=now.strftime("%Y-%m-%d")
     )
     
     doc = order_obj.model_dump()
@@ -266,19 +225,25 @@ async def get_order_stats():
     # Get all orders
     all_orders = await db.orders.find({}, {"_id": 0}).to_list(10000)
     
-    # Group by pickup date
+    # Group by order date
     stats_by_date = {}
-    
-    # Weekly, monthly, yearly aggregations
     weekly_stats = {}
     monthly_stats = {}
     yearly_stats = {}
     
     for order in all_orders:
-        pickup_date = order.get("pickup_date", "Unknown")
-        if pickup_date not in stats_by_date:
-            stats_by_date[pickup_date] = {
-                "date": pickup_date,
+        # Use order_date if available, otherwise extract from created_at
+        order_date = order.get("order_date")
+        if not order_date:
+            try:
+                created_at = order.get("created_at", "")
+                order_date = created_at[:10] if created_at else "Unknown"
+            except:
+                order_date = "Unknown"
+        
+        if order_date not in stats_by_date:
+            stats_by_date[order_date] = {
+                "date": order_date,
                 "total_orders": 0,
                 "completed_orders": 0,
                 "cancelled_orders": 0,
@@ -288,7 +253,7 @@ async def get_order_stats():
                 "orders": []
             }
         
-        stats = stats_by_date[pickup_date]
+        stats = stats_by_date[order_date]
         stats["total_orders"] += 1
         total = order.get("total", 0)
         status = order.get("status", "pending")
@@ -306,12 +271,12 @@ async def get_order_stats():
         
         stats["orders"].append(order)
         
-        # Aggregate by week, month, year (based on pickup_date)
-        if pickup_date and pickup_date != "Unknown":
+        # Aggregate by week, month, year
+        if order_date and order_date != "Unknown":
             try:
-                date_obj = datetime.strptime(pickup_date, "%Y-%m-%d")
+                date_obj = datetime.strptime(order_date, "%Y-%m-%d")
                 
-                # Week key (ISO week)
+                # Week key
                 week_key = date_obj.strftime("%Y-W%W")
                 week_start = date_obj - timedelta(days=date_obj.weekday())
                 week_label = f"Week of {week_start.strftime('%b %d, %Y')}"
@@ -355,15 +320,13 @@ async def get_order_stats():
             except:
                 pass
     
-    # Sort by date descending
+    # Sort
     sorted_stats = sorted(stats_by_date.values(), key=lambda x: x["date"], reverse=True)
-    
-    # Sort aggregations
     sorted_weekly = sorted(weekly_stats.items(), key=lambda x: x[0], reverse=True)
     sorted_monthly = sorted(monthly_stats.items(), key=lambda x: x[0], reverse=True)
     sorted_yearly = sorted(yearly_stats.items(), key=lambda x: x[0], reverse=True)
     
-    # Calculate totals (exclude cancelled from revenue)
+    # Calculate totals
     totals = {
         "total_orders": sum(s["total_orders"] for s in sorted_stats),
         "completed_orders": sum(s["completed_orders"] for s in sorted_stats),
@@ -435,7 +398,6 @@ async def delete_order(order_id: str):
 async def get_settings():
     settings = await db.settings.find_one({"id": "shop_settings"}, {"_id": 0})
     if not settings:
-        # Create default settings
         default_settings = ShopSettings()
         await db.settings.insert_one(default_settings.model_dump())
         return default_settings
@@ -471,10 +433,8 @@ async def send_order_confirmation(order: Order):
             logger.warning("No EMERGENT_LLM_KEY found, skipping email")
             return
         
-        # Build order items list
         items_text = "\n".join([f"- {item['product_name']} x{item['quantity']} - ${item['price'] * item['quantity']:.2f}" for item in order.items])
         
-        # Use LLM to generate personalized email
         chat = LlmChat(
             api_key=api_key,
             session_id=f"order-email-{order.id}",
@@ -484,7 +444,6 @@ async def send_order_confirmation(order: Order):
         prompt = f"""Generate a brief, warm order confirmation email for:
 
 Customer: {order.customer_name}
-Pickup Date: {order.pickup_date}
 Order Items:
 {items_text}
 Total: ${order.total:.2f}
@@ -498,10 +457,8 @@ Keep it short, warm, and personal. Don't use emojis excessively."""
         user_message = UserMessage(text=prompt)
         email_content = await chat.send_message(user_message)
         
-        # Log the email (in production, integrate with actual email service)
         logger.info(f"Order confirmation email for {order.email}:\n{email_content}")
         
-        # Store email in database for reference
         await db.emails.insert_one({
             "id": str(uuid.uuid4()),
             "order_id": order.id,
@@ -524,7 +481,7 @@ async def root():
 async def health():
     return {"status": "healthy"}
 
-# Include the router in the main app
+# Include the router
 app.include_router(api_router)
 
 app.add_middleware(
@@ -535,7 +492,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
