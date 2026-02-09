@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { ShoppingBag, Plus, Minus, X, Send, Loader2, Store } from "lucide-react";
+import { ShoppingBag, Plus, Minus, X, Send, Loader2, Store, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +14,13 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -25,6 +32,7 @@ export default function ShopPage() {
   const [submitting, setSubmitting] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [selectedDate, setSelectedDate] = useState("");
   
   const [formData, setFormData] = useState({
     customer_name: "",
@@ -59,13 +67,67 @@ export default function ShopPage() {
     }
   };
 
+  // Get all available dates from products
+  const availableDates = useMemo(() => {
+    const dates = new Set();
+    products.forEach(product => {
+      (product.availability || []).forEach(avail => {
+        if (avail.quantity > 0) {
+          dates.add(avail.date);
+        }
+      });
+    });
+    return Array.from(dates).sort();
+  }, [products]);
+
+  // Set default date when available dates change
+  useEffect(() => {
+    if (availableDates.length > 0 && !selectedDate) {
+      setSelectedDate(availableDates[0]);
+    }
+  }, [availableDates, selectedDate]);
+
+  // Get products available for selected date
+  const productsForDate = useMemo(() => {
+    if (!selectedDate) return [];
+    
+    return products
+      .map(product => {
+        const avail = (product.availability || []).find(a => a.date === selectedDate);
+        if (avail) {
+          return {
+            ...product,
+            quantity: avail.quantity,
+            max_quantity: avail.max_quantity,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [products, selectedDate]);
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "";
+    try {
+      return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const addToCart = (product) => {
     if (product.quantity <= 0) {
       toast.error("This item is sold out");
       return;
     }
 
-    const existingItem = cart.find((item) => item.product_id === product.id);
+    const existingItem = cart.find(
+      (item) => item.product_id === product.id && item.pickup_date === selectedDate
+    );
     const currentQty = existingItem ? existingItem.quantity : 0;
 
     if (currentQty >= product.quantity) {
@@ -76,7 +138,7 @@ export default function ShopPage() {
     if (existingItem) {
       setCart(
         cart.map((item) =>
-          item.product_id === product.id
+          item.product_id === product.id && item.pickup_date === selectedDate
             ? { ...item, quantity: item.quantity + 1 }
             : item
         )
@@ -90,17 +152,18 @@ export default function ShopPage() {
           quantity: 1,
           price: product.price,
           max_available: product.quantity,
+          pickup_date: selectedDate,
         },
       ]);
     }
     toast.success(`Added ${product.name} to cart`);
   };
 
-  const updateCartQuantity = (productId, delta) => {
+  const updateCartQuantity = (productId, pickupDate, delta) => {
     setCart(
       cart
         .map((item) => {
-          if (item.product_id === productId) {
+          if (item.product_id === productId && item.pickup_date === pickupDate) {
             const newQty = item.quantity + delta;
             if (newQty <= 0) return null;
             if (newQty > item.max_available) {
@@ -115,9 +178,21 @@ export default function ShopPage() {
     );
   };
 
-  const removeFromCart = (productId) => {
-    setCart(cart.filter((item) => item.product_id !== productId));
+  const removeFromCart = (productId, pickupDate) => {
+    setCart(cart.filter((item) => !(item.product_id === productId && item.pickup_date === pickupDate)));
   };
+
+  // Group cart items by pickup date
+  const cartByDate = useMemo(() => {
+    const grouped = {};
+    cart.forEach(item => {
+      if (!grouped[item.pickup_date]) {
+        grouped[item.pickup_date] = [];
+      }
+      grouped[item.pickup_date].push(item);
+    });
+    return grouped;
+  }, [cart]);
 
   const cartTotal = cart.reduce(
     (sum, item) => sum + item.price * item.quantity,
@@ -139,15 +214,24 @@ export default function ShopPage() {
       return;
     }
 
+    // Check if all items are for the same pickup date
+    const pickupDates = [...new Set(cart.map(item => item.pickup_date))];
+    if (pickupDates.length > 1) {
+      toast.error("Please place separate orders for different pickup dates");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const orderData = {
         ...formData,
-        items: cart.map(({ product_id, product_name, quantity, price }) => ({
+        pickup_date: pickupDates[0],
+        items: cart.map(({ product_id, product_name, quantity, price, pickup_date }) => ({
           product_id,
           product_name,
           quantity,
           price,
+          pickup_date,
         })),
       };
 
@@ -245,47 +329,57 @@ export default function ShopPage() {
                   ) : (
                     <>
                       <div className="flex-1 overflow-auto space-y-4">
-                        {cart.map((item) => (
-                          <div
-                            key={item.product_id}
-                            className="flex items-center gap-4 p-3 bg-stone-50 rounded-xl"
-                            data-testid={`cart-item-${item.product_id}`}
-                          >
-                            <div className="flex-1">
-                              <h4 className="font-medium text-stone-900">
-                                {item.product_name}
-                              </h4>
-                              <p className="text-sm text-stone-600">
-                                ${item.price.toFixed(2)} each
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => updateCartQuantity(item.product_id, -1)}
-                                className="quantity-btn"
-                                data-testid={`decrease-qty-${item.product_id}`}
-                              >
-                                <Minus className="w-4 h-4" />
-                              </button>
-                              <span className="w-8 text-center font-medium">
-                                {item.quantity}
+                        {Object.entries(cartByDate).map(([date, items]) => (
+                          <div key={date}>
+                            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-200">
+                              <Calendar className="w-4 h-4 text-orange-700" />
+                              <span className="text-sm font-medium text-stone-700">
+                                Pickup: {formatDate(date)}
                               </span>
-                              <button
-                                onClick={() => updateCartQuantity(item.product_id, 1)}
-                                className="quantity-btn"
-                                disabled={item.quantity >= item.max_available}
-                                data-testid={`increase-qty-${item.product_id}`}
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => removeFromCart(item.product_id)}
-                                className="ml-2 text-stone-400 hover:text-red-500 transition-colors"
-                                data-testid={`remove-item-${item.product_id}`}
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
                             </div>
+                            {items.map((item) => (
+                              <div
+                                key={`${item.product_id}-${item.pickup_date}`}
+                                className="flex items-center gap-4 p-3 bg-stone-50 rounded-xl mb-2"
+                                data-testid={`cart-item-${item.product_id}`}
+                              >
+                                <div className="flex-1">
+                                  <h4 className="font-medium text-stone-900">
+                                    {item.product_name}
+                                  </h4>
+                                  <p className="text-sm text-stone-600">
+                                    ${item.price.toFixed(2)} each
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => updateCartQuantity(item.product_id, item.pickup_date, -1)}
+                                    className="quantity-btn"
+                                    data-testid={`decrease-qty-${item.product_id}`}
+                                  >
+                                    <Minus className="w-4 h-4" />
+                                  </button>
+                                  <span className="w-8 text-center font-medium">
+                                    {item.quantity}
+                                  </span>
+                                  <button
+                                    onClick={() => updateCartQuantity(item.product_id, item.pickup_date, 1)}
+                                    className="quantity-btn"
+                                    disabled={item.quantity >= item.max_available}
+                                    data-testid={`increase-qty-${item.product_id}`}
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => removeFromCart(item.product_id, item.pickup_date)}
+                                    className="ml-2 text-stone-400 hover:text-red-500 transition-colors"
+                                    data-testid={`remove-item-${item.product_id}`}
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ))}
                       </div>
@@ -297,6 +391,12 @@ export default function ShopPage() {
                             ${cartTotal.toFixed(2)}
                           </span>
                         </div>
+                        
+                        {Object.keys(cartByDate).length > 1 && (
+                          <p className="text-sm text-amber-600 mb-4">
+                            Note: You have items for multiple dates. Please place separate orders.
+                          </p>
+                        )}
                         
                         <form onSubmit={handleSubmitOrder} className="space-y-4">
                           <div>
@@ -359,7 +459,7 @@ export default function ShopPage() {
                           </div>
                           <Button
                             type="submit"
-                            disabled={submitting || cart.length === 0}
+                            disabled={submitting || cart.length === 0 || Object.keys(cartByDate).length > 1}
                             className="btn-primary w-full text-white rounded-xl py-3"
                             data-testid="submit-order-btn"
                           >
@@ -389,9 +489,6 @@ export default function ShopPage() {
           <h2 className="font-heading text-4xl sm:text-5xl font-bold text-stone-900 mb-4 animate-fade-in">
             Fresh Baked Weekly
           </h2>
-          <p className="text-lg text-stone-600 max-w-xl mx-auto animate-fade-in stagger-1">
-            {settings.weekly_date && `Orders for ${settings.weekly_date}`}
-          </p>
           {settings.pickup_info && (
             <p className="text-stone-500 mt-2 animate-fade-in stagger-2">
               {settings.pickup_info}
@@ -400,6 +497,32 @@ export default function ShopPage() {
         </div>
       </section>
 
+      {/* Date Selector */}
+      {availableDates.length > 0 && (
+        <section className="py-6 border-b border-stone-200">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Label className="text-stone-700 font-medium flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-orange-700" />
+                Select Pickup Date:
+              </Label>
+              <Select value={selectedDate} onValueChange={setSelectedDate}>
+                <SelectTrigger className="w-[280px] rounded-xl" data-testid="date-selector">
+                  <SelectValue placeholder="Choose a date" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableDates.map((date) => (
+                    <SelectItem key={date} value={date}>
+                      {formatDate(date)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Products Grid */}
       <section className="py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -407,15 +530,21 @@ export default function ShopPage() {
             <div className="flex justify-center py-20">
               <div className="loading-spinner" />
             </div>
-          ) : products.length === 0 ? (
+          ) : availableDates.length === 0 ? (
             <div className="text-center py-20">
-              <p className="text-stone-500 text-lg">No items available this week. Check back soon!</p>
+              <p className="text-stone-500 text-lg">No items available. Check back soon!</p>
+            </div>
+          ) : productsForDate.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-stone-500 text-lg">No items available for this date. Try another date!</p>
             </div>
           ) : (
             <div className="product-grid" data-testid="products-grid">
-              {products.map((product, index) => {
+              {productsForDate.map((product, index) => {
                 const isSoldOut = product.quantity <= 0;
-                const cartItem = cart.find((item) => item.product_id === product.id);
+                const cartItem = cart.find(
+                  (item) => item.product_id === product.id && item.pickup_date === selectedDate
+                );
                 const cartQty = cartItem ? cartItem.quantity : 0;
                 const availableQty = product.quantity - cartQty;
 
