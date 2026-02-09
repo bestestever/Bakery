@@ -217,11 +217,20 @@ class BakeryAPITester:
             print("❌ No order ID returned")
             return False
         
+        # Store order ID for archive testing
+        self.test_order_id = order_id
+        
         # Get all orders
         success2, _ = self.run_test("Get All Orders", "GET", "orders", 200)
         
+        # Get active orders (archived=false)
+        success3, _ = self.run_test("Get Active Orders", "GET", "orders", 200, params={"archived": "false"})
+        
+        # Get archived orders (archived=true) 
+        success4, _ = self.run_test("Get Archived Orders", "GET", "orders", 200, params={"archived": "true"})
+        
         # Update order status
-        success3, _ = self.run_test(
+        success5, _ = self.run_test(
             "Update Order Status - Complete",
             "PUT",
             f"orders/{order_id}/status",
@@ -229,7 +238,7 @@ class BakeryAPITester:
             params={"status": "completed"}
         )
         
-        success4, _ = self.run_test(
+        success6, _ = self.run_test(
             "Update Order Status - Cancel",
             "PUT",
             f"orders/{order_id}/status",
@@ -237,7 +246,134 @@ class BakeryAPITester:
             params={"status": "cancelled"}
         )
         
-        return success1 and success2 and success3 and success4
+        return success1 and success2 and success3 and success4 and success5 and success6
+
+    def test_archive_functionality(self):
+        """Test order archive/unarchive/delete functionality"""
+        if not hasattr(self, 'test_order_id'):
+            print("❌ No test order available for archive testing")
+            return False
+        
+        order_id = self.test_order_id
+        
+        # Archive order
+        success1, _ = self.run_test(
+            "Archive Order",
+            "PUT",
+            f"orders/{order_id}/archive",
+            200
+        )
+        
+        # Verify order is archived by checking archived orders list
+        success2, archived_orders = self.run_test(
+            "Get Archived Orders After Archive",
+            "GET", 
+            "orders",
+            200,
+            params={"archived": "true"}
+        )
+        
+        # Check if our order is in archived list
+        archived_found = False
+        if success2 and isinstance(archived_orders, list):
+            archived_found = any(order.get('id') == order_id for order in archived_orders)
+            if archived_found:
+                print(f"✅ Order {order_id} found in archived orders")
+            else:
+                print(f"❌ Order {order_id} not found in archived orders")
+        
+        # Unarchive order
+        success3, _ = self.run_test(
+            "Unarchive Order",
+            "PUT",
+            f"orders/{order_id}/unarchive",
+            200
+        )
+        
+        # Verify order is back in active orders
+        success4, active_orders = self.run_test(
+            "Get Active Orders After Unarchive",
+            "GET",
+            "orders", 
+            200,
+            params={"archived": "false"}
+        )
+        
+        # Check if our order is back in active list
+        active_found = False
+        if success4 and isinstance(active_orders, list):
+            active_found = any(order.get('id') == order_id for order in active_orders)
+            if active_found:
+                print(f"✅ Order {order_id} found in active orders after unarchive")
+            else:
+                print(f"❌ Order {order_id} not found in active orders after unarchive")
+        
+        # Archive again for delete test
+        success5, _ = self.run_test(
+            "Archive Order Again",
+            "PUT",
+            f"orders/{order_id}/archive",
+            200
+        )
+        
+        # Delete order
+        success6, _ = self.run_test(
+            "Delete Order",
+            "DELETE",
+            f"orders/{order_id}",
+            200
+        )
+        
+        return success1 and success2 and archived_found and success3 and success4 and active_found and success5 and success6
+
+    def test_stats_endpoint(self):
+        """Test order stats endpoint"""
+        success, stats = self.run_test(
+            "Get Order Stats",
+            "GET",
+            "orders/stats",
+            200
+        )
+        
+        if not success:
+            return False
+        
+        # Verify stats structure
+        required_keys = ['current_week', 'previous_week', 'all_time']
+        for key in required_keys:
+            if key not in stats:
+                print(f"❌ Missing key '{key}' in stats response")
+                return False
+        
+        # Verify current_week structure
+        current_week = stats.get('current_week', {})
+        week_keys = ['total_orders', 'completed_orders', 'cancelled_orders', 'pending_orders', 'total_revenue', 'completed_revenue']
+        for key in week_keys:
+            if key not in current_week:
+                print(f"❌ Missing key '{key}' in current_week stats")
+                return False
+        
+        # Verify previous_week structure  
+        previous_week = stats.get('previous_week', {})
+        for key in week_keys:
+            if key not in previous_week:
+                print(f"❌ Missing key '{key}' in previous_week stats")
+                return False
+        
+        # Verify all_time structure
+        all_time = stats.get('all_time', {})
+        all_time_keys = ['total_orders', 'completed_orders', 'cancelled_orders', 'total_revenue', 'completed_revenue']
+        for key in all_time_keys:
+            if key not in all_time:
+                print(f"❌ Missing key '{key}' in all_time stats")
+                return False
+        
+        print(f"✅ Stats structure validated successfully")
+        print(f"   Current week: {current_week['total_orders']} orders, ${current_week['total_revenue']:.2f} revenue")
+        print(f"   Previous week: {previous_week['total_orders']} orders, ${previous_week['total_revenue']:.2f} revenue") 
+        print(f"   All time: {all_time['total_orders']} orders, ${all_time['total_revenue']:.2f} revenue")
+        
+        return True
 
     def cleanup_test_data(self):
         """Clean up test product if created"""
