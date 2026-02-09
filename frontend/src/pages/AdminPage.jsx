@@ -1161,6 +1161,90 @@ export default function AdminPage() {
                   </Card>
                 </div>
 
+                {/* Revenue by Period */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* By Week */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-orange-700" />
+                        Revenue by Week
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {stats?.by_week?.length === 0 ? (
+                        <p className="text-stone-500 text-sm">No data yet</p>
+                      ) : (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {stats?.by_week?.map((week) => (
+                            <div key={week.key} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                              <div>
+                                <p className="text-sm font-medium text-stone-700">{week.label}</p>
+                                <p className="text-xs text-stone-500">{week.orders} orders • {week.completed} done</p>
+                              </div>
+                              <span className="font-bold text-stone-900">${week.revenue.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* By Month */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-orange-700" />
+                        Revenue by Month
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {stats?.by_month?.length === 0 ? (
+                        <p className="text-stone-500 text-sm">No data yet</p>
+                      ) : (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {stats?.by_month?.map((month) => (
+                            <div key={month.key} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                              <div>
+                                <p className="text-sm font-medium text-stone-700">{month.label}</p>
+                                <p className="text-xs text-stone-500">{month.orders} orders • {month.completed} done</p>
+                              </div>
+                              <span className="font-bold text-stone-900">${month.revenue.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* By Year */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-orange-700" />
+                        Revenue by Year
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {stats?.by_year?.length === 0 ? (
+                        <p className="text-stone-500 text-sm">No data yet</p>
+                      ) : (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                          {stats?.by_year?.map((year) => (
+                            <div key={year.key} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                              <div>
+                                <p className="text-sm font-medium text-stone-700">{year.label}</p>
+                                <p className="text-xs text-stone-500">{year.orders} orders • {year.completed} done</p>
+                              </div>
+                              <span className="font-bold text-stone-900">${year.revenue.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
                 {/* Orders by Pickup Date */}
                 <div>
                   <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
@@ -1249,6 +1333,15 @@ export default function AdminPage() {
                                           data-testid={`stats-edit-order-${order.id}`}
                                         >
                                           <Pencil className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleDeleteOrder(order.id)}
+                                          className="rounded-lg text-red-700"
+                                          data-testid={`stats-delete-order-${order.id}`}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
                                         </Button>
                                       </div>
                                     </div>
