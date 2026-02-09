@@ -20,11 +20,12 @@ import {
   BarChart3,
   Calendar,
   DollarSign,
-  TrendingUp,
   CheckCircle,
   XCircle,
   Clock,
   ArchiveRestore,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -73,16 +79,24 @@ export default function AdminPage() {
   
   const [editingProduct, setEditingProduct] = useState(null);
   const [productDialogOpen, setProductDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [expandedDates, setExpandedDates] = useState({});
 
   const [newProduct, setNewProduct] = useState({
     name: "",
     description: "",
     price: "",
-    quantity: "",
-    max_quantity: "",
     image_url: "",
     active: true,
+    availability: [],
+  });
+
+  const [newDateAvail, setNewDateAvail] = useState({
+    date: "",
+    quantity: "",
+    max_quantity: "",
   });
 
   useEffect(() => {
@@ -142,16 +156,57 @@ export default function AdminPage() {
     }
   };
 
+  const handleAddDateAvailability = () => {
+    if (!newDateAvail.date || !newDateAvail.quantity || !newDateAvail.max_quantity) {
+      toast.error("Please fill in all date availability fields");
+      return;
+    }
+    
+    const exists = newProduct.availability.find(a => a.date === newDateAvail.date);
+    if (exists) {
+      toast.error("This date already exists");
+      return;
+    }
+
+    setNewProduct({
+      ...newProduct,
+      availability: [
+        ...newProduct.availability,
+        {
+          date: newDateAvail.date,
+          quantity: parseInt(newDateAvail.quantity),
+          max_quantity: parseInt(newDateAvail.max_quantity),
+        },
+      ],
+    });
+    setNewDateAvail({ date: "", quantity: "", max_quantity: "" });
+  };
+
+  const handleRemoveDateAvailability = (date) => {
+    setNewProduct({
+      ...newProduct,
+      availability: newProduct.availability.filter(a => a.date !== date),
+    });
+  };
+
+  const handleUpdateDateQuantity = (date, field, value) => {
+    setNewProduct({
+      ...newProduct,
+      availability: newProduct.availability.map(a => 
+        a.date === date ? { ...a, [field]: parseInt(value) || 0 } : a
+      ),
+    });
+  };
+
   const handleSaveProduct = async () => {
     try {
       const productData = {
         name: newProduct.name,
         description: newProduct.description,
         price: parseFloat(newProduct.price),
-        quantity: parseInt(newProduct.quantity),
-        max_quantity: parseInt(newProduct.max_quantity),
         image_url: newProduct.image_url,
         active: newProduct.active,
+        availability: newProduct.availability,
       };
 
       if (editingProduct) {
@@ -168,10 +223,9 @@ export default function AdminPage() {
         name: "",
         description: "",
         price: "",
-        quantity: "",
-        max_quantity: "",
         image_url: "",
         active: true,
+        availability: [],
       });
       fetchData();
     } catch (error) {
@@ -186,10 +240,9 @@ export default function AdminPage() {
       name: product.name,
       description: product.description,
       price: product.price.toString(),
-      quantity: product.quantity.toString(),
-      max_quantity: product.max_quantity.toString(),
       image_url: product.image_url,
       active: product.active,
+      availability: product.availability || [],
     });
     setProductDialogOpen(true);
   };
@@ -214,15 +267,6 @@ export default function AdminPage() {
       fetchData();
     } catch (error) {
       toast.error("Failed to update product");
-    }
-  };
-
-  const handleQuickUpdateQuantity = async (productId, newQuantity) => {
-    try {
-      await axios.put(`${API}/products/${productId}`, { quantity: newQuantity });
-      fetchData();
-    } catch (error) {
-      toast.error("Failed to update quantity");
     }
   };
 
@@ -281,16 +325,41 @@ export default function AdminPage() {
     }
   };
 
-  // Group orders by date
-  const groupOrdersByDate = (ordersList) => {
+  const handleEditOrder = (order) => {
+    setEditingOrder({ ...order });
+    setOrderDialogOpen(true);
+  };
+
+  const handleSaveOrder = async () => {
+    try {
+      await axios.put(`${API}/orders/${editingOrder.id}`, {
+        customer_name: editingOrder.customer_name,
+        email: editingOrder.email,
+        phone: editingOrder.phone,
+        notes: editingOrder.notes,
+        status: editingOrder.status,
+      });
+      toast.success("Order updated");
+      setOrderDialogOpen(false);
+      setEditingOrder(null);
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to update order");
+    }
+  };
+
+  const toggleDateExpanded = (date) => {
+    setExpandedDates(prev => ({
+      ...prev,
+      [date]: !prev[date]
+    }));
+  };
+
+  // Group orders by pickup date
+  const groupOrdersByPickupDate = (ordersList) => {
     const grouped = {};
     ordersList.forEach((order) => {
-      const date = new Date(order.created_at).toLocaleDateString("en-US", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      const date = order.pickup_date || "Unknown";
       if (!grouped[date]) {
         grouped[date] = [];
       }
@@ -299,8 +368,28 @@ export default function AdminPage() {
     return grouped;
   };
 
-  const groupedOrders = groupOrdersByDate(showArchived ? archivedOrders : orders);
-  const displayOrders = showArchived ? archivedOrders : orders;
+  const groupedOrders = groupOrdersByPickupDate(showArchived ? archivedOrders : orders);
+
+  // Format date for display
+  const formatDate = (dateStr) => {
+    if (!dateStr || dateStr === "Unknown") return dateStr;
+    try {
+      return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Get total quantity across all dates for a product
+  const getTotalQuantity = (product) => {
+    if (!product.availability || product.availability.length === 0) return 0;
+    return product.availability.reduce((sum, a) => sum + a.quantity, 0);
+  };
 
   // Login Screen
   if (!isAuthenticated) {
@@ -423,7 +512,7 @@ export default function AdminPage() {
               <div className="admin-card">
                 <div className="p-6 border-b border-stone-200 flex items-center justify-between">
                   <h2 className="font-heading text-xl font-semibold text-stone-900">
-                    Weekly Products
+                    Products
                   </h2>
                   <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
                     <DialogTrigger asChild>
@@ -434,10 +523,9 @@ export default function AdminPage() {
                             name: "",
                             description: "",
                             price: "",
-                            quantity: "",
-                            max_quantity: "",
                             image_url: "",
                             active: true,
+                            availability: [],
                           });
                         }}
                         className="btn-primary text-white rounded-xl"
@@ -447,7 +535,7 @@ export default function AdminPage() {
                         Add Product
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-md" data-testid="product-dialog">
+                    <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" data-testid="product-dialog">
                       <DialogHeader>
                         <DialogTitle className="font-heading">
                           {editingProduct ? "Edit Product" : "Add New Product"}
@@ -507,34 +595,6 @@ export default function AdminPage() {
                             />
                           </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>Available Qty</Label>
-                            <Input
-                              type="number"
-                              value={newProduct.quantity}
-                              onChange={(e) =>
-                                setNewProduct({ ...newProduct, quantity: e.target.value })
-                              }
-                              placeholder="10"
-                              className="mt-1 rounded-lg"
-                              data-testid="product-quantity-input"
-                            />
-                          </div>
-                          <div>
-                            <Label>Max Qty (sell-out limit)</Label>
-                            <Input
-                              type="number"
-                              value={newProduct.max_quantity}
-                              onChange={(e) =>
-                                setNewProduct({ ...newProduct, max_quantity: e.target.value })
-                              }
-                              placeholder="10"
-                              className="mt-1 rounded-lg"
-                              data-testid="product-max-quantity-input"
-                            />
-                          </div>
-                        </div>
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={newProduct.active}
@@ -545,6 +605,98 @@ export default function AdminPage() {
                           />
                           <Label>Active (visible in shop)</Label>
                         </div>
+                        
+                        {/* Date Availability Section */}
+                        <div className="border-t pt-4 mt-4">
+                          <Label className="text-base font-semibold">Date Availability</Label>
+                          <p className="text-xs text-stone-500 mb-3">Add dates when this item is available and set quantities for each date</p>
+                          
+                          {/* Existing dates */}
+                          {newProduct.availability.length > 0 && (
+                            <div className="space-y-2 mb-4">
+                              {newProduct.availability
+                                .sort((a, b) => a.date.localeCompare(b.date))
+                                .map((avail) => (
+                                <div key={avail.date} className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg">
+                                  <span className="text-sm font-medium min-w-[100px]">
+                                    {formatDate(avail.date)}
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    value={avail.quantity}
+                                    onChange={(e) => handleUpdateDateQuantity(avail.date, "quantity", e.target.value)}
+                                    className="w-20 h-8 text-center rounded"
+                                    min="0"
+                                    data-testid={`avail-qty-${avail.date}`}
+                                  />
+                                  <span className="text-stone-500">/</span>
+                                  <Input
+                                    type="number"
+                                    value={avail.max_quantity}
+                                    onChange={(e) => handleUpdateDateQuantity(avail.date, "max_quantity", e.target.value)}
+                                    className="w-20 h-8 text-center rounded"
+                                    min="0"
+                                    data-testid={`avail-max-${avail.date}`}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoveDateAvailability(avail.date)}
+                                    className="text-red-600 h-8 w-8 p-0"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {/* Add new date */}
+                          <div className="flex items-end gap-2">
+                            <div className="flex-1">
+                              <Label className="text-xs">Date</Label>
+                              <Input
+                                type="date"
+                                value={newDateAvail.date}
+                                onChange={(e) => setNewDateAvail({ ...newDateAvail, date: e.target.value })}
+                                className="mt-1 rounded-lg"
+                                data-testid="new-avail-date"
+                              />
+                            </div>
+                            <div className="w-20">
+                              <Label className="text-xs">Qty</Label>
+                              <Input
+                                type="number"
+                                value={newDateAvail.quantity}
+                                onChange={(e) => setNewDateAvail({ ...newDateAvail, quantity: e.target.value })}
+                                placeholder="10"
+                                className="mt-1 rounded-lg"
+                                data-testid="new-avail-qty"
+                              />
+                            </div>
+                            <div className="w-20">
+                              <Label className="text-xs">Max</Label>
+                              <Input
+                                type="number"
+                                value={newDateAvail.max_quantity}
+                                onChange={(e) => setNewDateAvail({ ...newDateAvail, max_quantity: e.target.value })}
+                                placeholder="10"
+                                className="mt-1 rounded-lg"
+                                data-testid="new-avail-max"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleAddDateAvailability}
+                              className="rounded-lg"
+                              data-testid="add-date-btn"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+
                         <div className="flex gap-3 pt-4">
                           <Button
                             variant="outline"
@@ -578,7 +730,7 @@ export default function AdminPage() {
                       <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Price</TableHead>
-                        <TableHead>Stock</TableHead>
+                        <TableHead>Dates & Stock</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -608,24 +760,26 @@ export default function AdminPage() {
                             ${product.price.toFixed(2)}
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                type="number"
-                                value={product.quantity}
-                                onChange={(e) =>
-                                  handleQuickUpdateQuantity(product.id, parseInt(e.target.value))
-                                }
-                                className="w-16 h-8 text-center rounded-lg"
-                                min="0"
-                                data-testid={`product-qty-${product.id}`}
-                              />
-                              <span className="text-stone-500 text-sm">
-                                / {product.max_quantity}
-                              </span>
-                            </div>
+                            {product.availability && product.availability.length > 0 ? (
+                              <div className="space-y-1">
+                                {product.availability
+                                  .sort((a, b) => a.date.localeCompare(b.date))
+                                  .map((avail) => (
+                                  <div key={avail.date} className="text-xs flex items-center gap-2">
+                                    <Calendar className="w-3 h-3 text-stone-400" />
+                                    <span className="text-stone-600">{avail.date}</span>
+                                    <Badge variant={avail.quantity > 0 ? "secondary" : "destructive"} className="text-xs">
+                                      {avail.quantity}/{avail.max_quantity}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400 text-sm">No dates set</span>
+                            )}
                           </TableCell>
                           <TableCell>
-                            {product.quantity <= 0 ? (
+                            {getTotalQuantity(product) <= 0 ? (
                               <Badge variant="destructive" className="bg-red-100 text-red-700">
                                 Sold Out
                               </Badge>
@@ -684,30 +838,28 @@ export default function AdminPage() {
                   <h2 className="font-heading text-xl font-semibold text-stone-900">
                     {showArchived ? "Archived Orders" : "Active Orders"}
                   </h2>
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant={showArchived ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setShowArchived(!showArchived)}
-                      className="rounded-lg"
-                      data-testid="toggle-archived-btn"
-                    >
-                      {showArchived ? (
-                        <>
-                          <ClipboardList className="w-4 h-4 mr-2" />
-                          View Active ({orders.length})
-                        </>
-                      ) : (
-                        <>
-                          <Archive className="w-4 h-4 mr-2" />
-                          View Archived ({archivedOrders.length})
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  <Button
+                    variant={showArchived ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowArchived(!showArchived)}
+                    className="rounded-lg"
+                    data-testid="toggle-archived-btn"
+                  >
+                    {showArchived ? (
+                      <>
+                        <ClipboardList className="w-4 h-4 mr-2" />
+                        View Active ({orders.length})
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="w-4 h-4 mr-2" />
+                        View Archived ({archivedOrders.length})
+                      </>
+                    )}
+                  </Button>
                 </div>
                 
-                {displayOrders.length === 0 ? (
+                {Object.keys(groupedOrders).length === 0 ? (
                   <div className="p-12 text-center">
                     <ClipboardList className="w-12 h-12 text-stone-300 mx-auto mb-4" />
                     <p className="text-stone-500">
@@ -716,11 +868,13 @@ export default function AdminPage() {
                   </div>
                 ) : (
                   <div data-testid="orders-list">
-                    {Object.entries(groupedOrders).map(([date, dateOrders]) => (
+                    {Object.entries(groupedOrders)
+                      .sort((a, b) => b[0].localeCompare(a[0]))
+                      .map(([date, dateOrders]) => (
                       <div key={date}>
                         <div className="px-6 py-3 bg-stone-50 border-b border-stone-200 flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-stone-500" />
-                          <span className="font-medium text-stone-700">{date}</span>
+                          <span className="font-medium text-stone-700">{formatDate(date)}</span>
                           <Badge variant="secondary" className="ml-2">
                             {dateOrders.length} order{dateOrders.length !== 1 ? "s" : ""}
                           </Badge>
@@ -745,12 +899,6 @@ export default function AdminPage() {
                                     >
                                       {order.status}
                                     </Badge>
-                                    {order.archived && (
-                                      <Badge variant="secondary">
-                                        <Archive className="w-3 h-3 mr-1" />
-                                        Archived
-                                      </Badge>
-                                    )}
                                   </div>
                                   <p className="text-sm text-stone-600">{order.email}</p>
                                   <p className="text-sm text-stone-600">{order.phone}</p>
@@ -772,9 +920,19 @@ export default function AdminPage() {
                                 </div>
                                 <div className="flex flex-col gap-2 sm:items-end">
                                   <p className="text-xs text-stone-500">
-                                    {new Date(order.created_at).toLocaleTimeString()}
+                                    {new Date(order.created_at).toLocaleString()}
                                   </p>
                                   <div className="flex gap-2 flex-wrap">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleEditOrder(order)}
+                                      className="rounded-lg"
+                                      data-testid={`edit-order-${order.id}`}
+                                    >
+                                      <Pencil className="w-4 h-4 mr-1" />
+                                      Edit
+                                    </Button>
                                     {!showArchived && (
                                       <>
                                         <Button
@@ -785,8 +943,7 @@ export default function AdminPage() {
                                           className="rounded-lg text-green-700"
                                           data-testid={`complete-order-${order.id}`}
                                         >
-                                          <CheckCircle className="w-4 h-4 mr-1" />
-                                          Complete
+                                          <CheckCircle className="w-4 h-4" />
                                         </Button>
                                         <Button
                                           variant="outline"
@@ -796,8 +953,7 @@ export default function AdminPage() {
                                           className="rounded-lg text-red-700"
                                           data-testid={`cancel-order-${order.id}`}
                                         >
-                                          <XCircle className="w-4 h-4 mr-1" />
-                                          Cancel
+                                          <XCircle className="w-4 h-4" />
                                         </Button>
                                         <Button
                                           variant="outline"
@@ -806,8 +962,7 @@ export default function AdminPage() {
                                           className="rounded-lg"
                                           data-testid={`archive-order-${order.id}`}
                                         >
-                                          <Archive className="w-4 h-4 mr-1" />
-                                          Archive
+                                          <Archive className="w-4 h-4" />
                                         </Button>
                                       </>
                                     )}
@@ -820,8 +975,7 @@ export default function AdminPage() {
                                           className="rounded-lg"
                                           data-testid={`unarchive-order-${order.id}`}
                                         >
-                                          <ArchiveRestore className="w-4 h-4 mr-1" />
-                                          Restore
+                                          <ArchiveRestore className="w-4 h-4" />
                                         </Button>
                                         <Button
                                           variant="outline"
@@ -830,8 +984,7 @@ export default function AdminPage() {
                                           className="rounded-lg text-red-700"
                                           data-testid={`delete-order-${order.id}`}
                                         >
-                                          <Trash2 className="w-4 h-4 mr-1" />
-                                          Delete
+                                          <Trash2 className="w-4 h-4" />
                                         </Button>
                                       </>
                                     )}
@@ -846,252 +999,259 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+
+              {/* Order Edit Dialog */}
+              <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
+                <DialogContent className="sm:max-w-md" data-testid="order-edit-dialog">
+                  <DialogHeader>
+                    <DialogTitle className="font-heading">Edit Order</DialogTitle>
+                  </DialogHeader>
+                  {editingOrder && (
+                    <div className="space-y-4 pt-4">
+                      <div>
+                        <Label>Customer Name</Label>
+                        <Input
+                          value={editingOrder.customer_name}
+                          onChange={(e) => setEditingOrder({ ...editingOrder, customer_name: e.target.value })}
+                          className="mt-1 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <Label>Email</Label>
+                        <Input
+                          value={editingOrder.email}
+                          onChange={(e) => setEditingOrder({ ...editingOrder, email: e.target.value })}
+                          className="mt-1 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <Label>Phone</Label>
+                        <Input
+                          value={editingOrder.phone}
+                          onChange={(e) => setEditingOrder({ ...editingOrder, phone: e.target.value })}
+                          className="mt-1 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <Label>Notes</Label>
+                        <Textarea
+                          value={editingOrder.notes}
+                          onChange={(e) => setEditingOrder({ ...editingOrder, notes: e.target.value })}
+                          className="mt-1 rounded-lg"
+                          rows={2}
+                        />
+                      </div>
+                      <div>
+                        <Label>Status</Label>
+                        <select
+                          value={editingOrder.status}
+                          onChange={(e) => setEditingOrder({ ...editingOrder, status: e.target.value })}
+                          className="w-full mt-1 p-2 border border-stone-200 rounded-lg"
+                        >
+                          <option value="pending">Pending</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </div>
+                      <div className="bg-stone-50 p-3 rounded-lg">
+                        <p className="text-sm font-medium text-stone-700 mb-2">Order Items:</p>
+                        {editingOrder.items.map((item, idx) => (
+                          <p key={idx} className="text-sm text-stone-600">
+                            {item.quantity}x {item.product_name} - ${(item.price * item.quantity).toFixed(2)}
+                          </p>
+                        ))}
+                        <p className="font-medium text-stone-900 mt-2">
+                          Total: ${editingOrder.total.toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="flex gap-3 pt-4">
+                        <Button
+                          variant="outline"
+                          onClick={() => setOrderDialogOpen(false)}
+                          className="flex-1 rounded-xl"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={handleSaveOrder}
+                          className="btn-primary flex-1 text-white rounded-xl"
+                          data-testid="save-order-btn"
+                        >
+                          <Save className="w-4 h-4 mr-2" />
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
-            {/* Stats Tab */}
+            {/* Stats Tab - Now shows orders grouped by pickup date */}
             <TabsContent value="stats">
               <div className="space-y-6">
-                {/* Current Week Stats */}
-                <div>
-                  <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
-                    This Week
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card data-testid="current-week-revenue">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
-                          Total Revenue
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          ${stats?.current_week?.total_revenue?.toFixed(2) || "0.00"}
-                        </p>
-                        <p className="text-xs text-green-600 mt-1">
-                          ${stats?.current_week?.completed_revenue?.toFixed(2) || "0.00"} completed
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="current-week-orders">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <ClipboardList className="w-4 h-4" />
-                          Total Orders
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          {stats?.current_week?.total_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="current-week-completed">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                          Completed
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-green-600">
-                          {stats?.current_week?.completed_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="current-week-pending">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-yellow-600" />
-                          Pending
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-yellow-600">
-                          {stats?.current_week?.pending_orders || 0}
-                        </p>
-                        <p className="text-xs text-red-600 mt-1">
-                          {stats?.current_week?.cancelled_orders || 0} cancelled
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  
-                  {/* Daily breakdown for current week */}
-                  {stats?.current_week?.orders_by_date && Object.keys(stats.current_week.orders_by_date).length > 0 && (
-                    <Card className="mt-4">
-                      <CardHeader>
-                        <CardTitle className="text-lg">Daily Breakdown</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {Object.entries(stats.current_week.orders_by_date)
-                            .sort((a, b) => b[0].localeCompare(a[0]))
-                            .map(([date, data]) => (
-                              <div key={date} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
-                                <span className="text-stone-700">{new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
-                                <div className="flex items-center gap-4">
-                                  <span className="text-sm text-stone-500">{data.count} orders</span>
-                                  <span className="font-medium text-stone-900">${data.revenue.toFixed(2)}</span>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  )}
+                {/* Totals */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Card data-testid="total-revenue">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        Total Revenue
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-2xl font-bold text-stone-900">
+                        ${stats?.totals?.total_revenue?.toFixed(2) || "0.00"}
+                      </p>
+                      <p className="text-xs text-green-600 mt-1">
+                        ${stats?.totals?.completed_revenue?.toFixed(2) || "0.00"} completed
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card data-testid="total-orders">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4" />
+                        Total Orders
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-2xl font-bold text-stone-900">
+                        {stats?.totals?.total_orders || 0}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card data-testid="completed-orders">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                        Completed
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-2xl font-bold text-green-600">
+                        {stats?.totals?.completed_orders || 0}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card data-testid="pending-orders">
+                    <CardHeader className="pb-2">
+                      <CardDescription className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-yellow-600" />
+                        Pending
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-2xl font-bold text-yellow-600">
+                        {stats?.totals?.pending_orders || 0}
+                      </p>
+                      <p className="text-xs text-red-600 mt-1">
+                        {stats?.totals?.cancelled_orders || 0} cancelled
+                      </p>
+                    </CardContent>
+                  </Card>
                 </div>
 
-                {/* Previous Week Stats */}
+                {/* Orders by Pickup Date */}
                 <div>
                   <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
-                    Previous Week
+                    Orders by Pickup Date
                   </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card data-testid="previous-week-revenue">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
-                          Total Revenue
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          ${stats?.previous_week?.total_revenue?.toFixed(2) || "0.00"}
-                        </p>
-                        <p className="text-xs text-green-600 mt-1">
-                          ${stats?.previous_week?.completed_revenue?.toFixed(2) || "0.00"} completed
-                        </p>
+                  {stats?.by_date?.length === 0 ? (
+                    <Card>
+                      <CardContent className="p-12 text-center">
+                        <ClipboardList className="w-12 h-12 text-stone-300 mx-auto mb-4" />
+                        <p className="text-stone-500">No orders yet</p>
                       </CardContent>
                     </Card>
-                    <Card data-testid="previous-week-orders">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <ClipboardList className="w-4 h-4" />
-                          Total Orders
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          {stats?.previous_week?.total_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="previous-week-completed">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                          Completed
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-green-600">
-                          {stats?.previous_week?.completed_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="previous-week-cancelled">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <XCircle className="w-4 h-4 text-red-600" />
-                          Cancelled
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-red-600">
-                          {stats?.previous_week?.cancelled_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  
-                  {/* Daily breakdown for previous week */}
-                  {stats?.previous_week?.orders_by_date && Object.keys(stats.previous_week.orders_by_date).length > 0 && (
-                    <Card className="mt-4">
-                      <CardHeader>
-                        <CardTitle className="text-lg">Daily Breakdown</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          {Object.entries(stats.previous_week.orders_by_date)
-                            .sort((a, b) => b[0].localeCompare(a[0]))
-                            .map(([date, data]) => (
-                              <div key={date} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
-                                <span className="text-stone-700">{new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
-                                <div className="flex items-center gap-4">
-                                  <span className="text-sm text-stone-500">{data.count} orders</span>
-                                  <span className="font-medium text-stone-900">${data.revenue.toFixed(2)}</span>
+                  ) : (
+                    <div className="space-y-4">
+                      {stats?.by_date?.map((dateStats) => (
+                        <Card key={dateStats.date}>
+                          <Collapsible 
+                            open={expandedDates[dateStats.date]} 
+                            onOpenChange={() => toggleDateExpanded(dateStats.date)}
+                          >
+                            <CollapsibleTrigger asChild>
+                              <CardHeader className="cursor-pointer hover:bg-stone-50 transition-colors">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3">
+                                    <Calendar className="w-5 h-5 text-orange-700" />
+                                    <CardTitle className="text-lg">{formatDate(dateStats.date)}</CardTitle>
+                                    <Badge variant="secondary">{dateStats.total_orders} orders</Badge>
+                                  </div>
+                                  <div className="flex items-center gap-4">
+                                    <div className="text-right">
+                                      <p className="font-bold text-stone-900">${dateStats.total_revenue.toFixed(2)}</p>
+                                      <p className="text-xs text-green-600">${dateStats.completed_revenue.toFixed(2)} completed</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <Badge className="bg-green-100 text-green-700">{dateStats.completed_orders} done</Badge>
+                                      <Badge className="bg-yellow-100 text-yellow-700">{dateStats.pending_orders} pending</Badge>
+                                      {dateStats.cancelled_orders > 0 && (
+                                        <Badge className="bg-red-100 text-red-700">{dateStats.cancelled_orders} cancelled</Badge>
+                                      )}
+                                    </div>
+                                    {expandedDates[dateStats.date] ? (
+                                      <ChevronUp className="w-5 h-5 text-stone-400" />
+                                    ) : (
+                                      <ChevronDown className="w-5 h-5 text-stone-400" />
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
-                        </div>
-                      </CardContent>
-                    </Card>
+                              </CardHeader>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <CardContent className="pt-0">
+                                <div className="border-t border-stone-200 pt-4 space-y-3">
+                                  {dateStats.orders.map((order) => (
+                                    <div 
+                                      key={order.id} 
+                                      className="flex items-center justify-between p-3 bg-stone-50 rounded-lg hover:bg-stone-100 transition-colors"
+                                      data-testid={`stats-order-${order.id}`}
+                                    >
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{order.customer_name}</span>
+                                          <Badge
+                                            className={
+                                              order.status === "completed"
+                                                ? "bg-green-100 text-green-700"
+                                                : order.status === "cancelled"
+                                                ? "bg-red-100 text-red-700"
+                                                : "bg-yellow-100 text-yellow-700"
+                                            }
+                                          >
+                                            {order.status}
+                                          </Badge>
+                                        </div>
+                                        <p className="text-sm text-stone-600">{order.email} • {order.phone}</p>
+                                        <p className="text-sm text-stone-500">
+                                          {order.items.map(i => `${i.quantity}x ${i.product_name}`).join(", ")}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <span className="font-bold">${order.total.toFixed(2)}</span>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => handleEditOrder(order)}
+                                          className="rounded-lg"
+                                          data-testid={`stats-edit-order-${order.id}`}
+                                        >
+                                          <Pencil className="w-4 h-4" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        </Card>
+                      ))}
+                    </div>
                   )}
-                </div>
-
-                {/* All Time Stats */}
-                <div>
-                  <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
-                    All Time
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Card data-testid="all-time-revenue">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <TrendingUp className="w-4 h-4" />
-                          Total Revenue
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          ${stats?.all_time?.total_revenue?.toFixed(2) || "0.00"}
-                        </p>
-                        <p className="text-xs text-green-600 mt-1">
-                          ${stats?.all_time?.completed_revenue?.toFixed(2) || "0.00"} completed
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="all-time-orders">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <ClipboardList className="w-4 h-4" />
-                          Total Orders
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-stone-900">
-                          {stats?.all_time?.total_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="all-time-completed">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                          Completed
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-green-600">
-                          {stats?.all_time?.completed_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card data-testid="all-time-cancelled">
-                      <CardHeader className="pb-2">
-                        <CardDescription className="flex items-center gap-2">
-                          <XCircle className="w-4 h-4 text-red-600" />
-                          Cancelled
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-red-600">
-                          {stats?.all_time?.cancelled_orders || 0}
-                        </p>
-                      </CardContent>
-                    </Card>
-                  </div>
                 </div>
               </div>
             </TabsContent>
@@ -1118,21 +1278,6 @@ export default function AdminPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-stone-700">Weekly Date / Title</Label>
-                    <Input
-                      value={settings.weekly_date || ""}
-                      onChange={(e) =>
-                        setSettings({ ...settings, weekly_date: e.target.value })
-                      }
-                      placeholder="Saturday, January 15th"
-                      className="mt-1 rounded-lg"
-                      data-testid="settings-weekly-date"
-                    />
-                    <p className="text-xs text-stone-500 mt-1">
-                      Displayed at the top of your shop (e.g., "Orders for Saturday pickup")
-                    </p>
-                  </div>
-                  <div>
                     <Label className="text-stone-700">Pickup Information</Label>
                     <Textarea
                       value={settings.pickup_info || ""}
@@ -1144,9 +1289,6 @@ export default function AdminPage() {
                       rows={2}
                       data-testid="settings-pickup-info"
                     />
-                    <p className="text-xs text-stone-500 mt-1">
-                      Included in order confirmation emails
-                    </p>
                   </div>
                   <div>
                     <Label className="text-stone-700">Payment Information</Label>
@@ -1160,9 +1302,6 @@ export default function AdminPage() {
                       rows={2}
                       data-testid="settings-payment-info"
                     />
-                    <p className="text-xs text-stone-500 mt-1">
-                      Included in order confirmation emails
-                    </p>
                   </div>
                   <div>
                     <Label className="text-stone-700">Email Message</Label>
@@ -1176,9 +1315,6 @@ export default function AdminPage() {
                       rows={3}
                       data-testid="settings-email-message"
                     />
-                    <p className="text-xs text-stone-500 mt-1">
-                      Custom message included in order confirmation emails
-                    </p>
                   </div>
                   <Button
                     onClick={handleSaveSettings}
