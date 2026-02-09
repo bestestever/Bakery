@@ -171,10 +171,20 @@ class BakeryAPITester:
             200
         )
         
-        # Update product
+        # Update product with new date availability
         update_data = {
-            "quantity": 3,
-            "price": 15.00
+            "availability": [
+                {
+                    "date": "2025-01-15",
+                    "quantity": 2,
+                    "max_quantity": 10
+                },
+                {
+                    "date": "2025-01-17",
+                    "quantity": 4,
+                    "max_quantity": 6
+                }
+            ]
         }
         success5, _ = self.run_test(
             "Update Product",
@@ -184,10 +194,27 @@ class BakeryAPITester:
             data=update_data
         )
         
+        # Test get products by date endpoint
+        success6, products_by_date = self.run_test(
+            "Get Products by Date",
+            "GET",
+            "products/by-date/2025-01-15",
+            200
+        )
+        
+        # Verify product appears in date-specific query
+        date_product_found = False
+        if success6 and isinstance(products_by_date, list):
+            date_product_found = any(p.get('id') == product_id for p in products_by_date)
+            if date_product_found:
+                print(f"✅ Product {product_id} found in date-specific query")
+            else:
+                print(f"❌ Product {product_id} not found in date-specific query")
+        
         # Store product ID for order testing
         self.test_product_id = product_id
         
-        return success1 and success2 and success3 and success4 and success5
+        return success1 and success2 and success3 and success4 and success5 and success6 and date_product_found
 
     def test_order_management(self):
         """Test order creation and management"""
