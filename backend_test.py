@@ -398,6 +398,8 @@ def main():
         ("Settings Management", tester.test_settings_management),
         ("Product Management", tester.test_product_management),
         ("Order Management", tester.test_order_management),
+        ("Archive Functionality", tester.test_archive_functionality),
+        ("Stats Endpoint", tester.test_stats_endpoint),
     ]
     
     all_passed = True
