@@ -84,6 +84,7 @@ class Order(BaseModel):
     items: List[OrderItem]
     total: float
     status: str = "pending"
+    archived: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class ShopSettings(BaseModel):
@@ -202,7 +203,12 @@ async def create_order(order: OrderCreate):
     return order_obj
 
 @api_router.get("/orders", response_model=List[Order])
-async def get_orders():
+async def get_orders(archived: bool = False):
+    orders = await db.orders.find({"archived": archived}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return orders
+
+@api_router.get("/orders/all", response_model=List[Order])
+async def get_all_orders():
     orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     return orders
 
@@ -212,6 +218,131 @@ async def update_order_status(order_id: str, status: str):
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Order not found")
     return {"message": "Status updated"}
+
+@api_router.put("/orders/{order_id}/archive")
+async def archive_order(order_id: str):
+    result = await db.orders.update_one({"id": order_id}, {"$set": {"archived": True}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"message": "Order archived"}
+
+@api_router.put("/orders/{order_id}/unarchive")
+async def unarchive_order(order_id: str):
+    result = await db.orders.update_one({"id": order_id}, {"$set": {"archived": False}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"message": "Order unarchived"}
+
+@api_router.delete("/orders/{order_id}")
+async def delete_order(order_id: str):
+    result = await db.orders.delete_one({"id": order_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"message": "Order deleted"}
+
+@api_router.get("/orders/stats")
+async def get_order_stats():
+    from datetime import timedelta
+    
+    now = datetime.now(timezone.utc)
+    
+    # Calculate week boundaries
+    # Current week: Monday to Sunday
+    days_since_monday = now.weekday()
+    current_week_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Previous week
+    previous_week_start = current_week_start - timedelta(days=7)
+    previous_week_end = current_week_start
+    
+    # Get all orders
+    all_orders = await db.orders.find({}, {"_id": 0}).to_list(10000)
+    
+    # Process orders into stats
+    stats = {
+        "current_week": {
+            "start": current_week_start.isoformat(),
+            "end": now.isoformat(),
+            "total_orders": 0,
+            "completed_orders": 0,
+            "cancelled_orders": 0,
+            "pending_orders": 0,
+            "total_revenue": 0.0,
+            "completed_revenue": 0.0,
+            "orders_by_date": {}
+        },
+        "previous_week": {
+            "start": previous_week_start.isoformat(),
+            "end": previous_week_end.isoformat(),
+            "total_orders": 0,
+            "completed_orders": 0,
+            "cancelled_orders": 0,
+            "pending_orders": 0,
+            "total_revenue": 0.0,
+            "completed_revenue": 0.0,
+            "orders_by_date": {}
+        },
+        "all_time": {
+            "total_orders": 0,
+            "completed_orders": 0,
+            "cancelled_orders": 0,
+            "total_revenue": 0.0,
+            "completed_revenue": 0.0
+        }
+    }
+    
+    for order in all_orders:
+        order_date = datetime.fromisoformat(order["created_at"].replace("Z", "+00:00"))
+        date_key = order_date.strftime("%Y-%m-%d")
+        total = order.get("total", 0)
+        status = order.get("status", "pending")
+        
+        # All time stats
+        stats["all_time"]["total_orders"] += 1
+        stats["all_time"]["total_revenue"] += total
+        if status == "completed":
+            stats["all_time"]["completed_orders"] += 1
+            stats["all_time"]["completed_revenue"] += total
+        elif status == "cancelled":
+            stats["all_time"]["cancelled_orders"] += 1
+        
+        # Current week
+        if order_date >= current_week_start:
+            stats["current_week"]["total_orders"] += 1
+            stats["current_week"]["total_revenue"] += total
+            if status == "completed":
+                stats["current_week"]["completed_orders"] += 1
+                stats["current_week"]["completed_revenue"] += total
+            elif status == "cancelled":
+                stats["current_week"]["cancelled_orders"] += 1
+            else:
+                stats["current_week"]["pending_orders"] += 1
+            
+            if date_key not in stats["current_week"]["orders_by_date"]:
+                stats["current_week"]["orders_by_date"][date_key] = {"count": 0, "revenue": 0.0}
+            stats["current_week"]["orders_by_date"][date_key]["count"] += 1
+            if status != "cancelled":
+                stats["current_week"]["orders_by_date"][date_key]["revenue"] += total
+        
+        # Previous week
+        elif previous_week_start <= order_date < previous_week_end:
+            stats["previous_week"]["total_orders"] += 1
+            stats["previous_week"]["total_revenue"] += total
+            if status == "completed":
+                stats["previous_week"]["completed_orders"] += 1
+                stats["previous_week"]["completed_revenue"] += total
+            elif status == "cancelled":
+                stats["previous_week"]["cancelled_orders"] += 1
+            else:
+                stats["previous_week"]["pending_orders"] += 1
+            
+            if date_key not in stats["previous_week"]["orders_by_date"]:
+                stats["previous_week"]["orders_by_date"][date_key] = {"count": 0, "revenue": 0.0}
+            stats["previous_week"]["orders_by_date"][date_key]["count"] += 1
+            if status != "cancelled":
+                stats["previous_week"]["orders_by_date"][date_key]["revenue"] += total
+    
+    return stats
 
 # ============= SETTINGS =============
 
