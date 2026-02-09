@@ -217,23 +217,25 @@ class BakeryAPITester:
         return success1 and success2 and success3 and success4 and success5 and success6 and date_product_found
 
     def test_order_management(self):
-        """Test order creation and management"""
+        """Test order creation and management with pickup dates"""
         if not hasattr(self, 'test_product_id'):
             print("❌ No test product available for order testing")
             return False
         
-        # Create an order
+        # Create an order with pickup date
         order_data = {
             "customer_name": "Test Customer",
             "email": "test@example.com",
             "phone": "555-123-4567",
             "notes": "Test order notes",
+            "pickup_date": "2025-01-15",
             "items": [
                 {
                     "product_id": self.test_product_id,
                     "product_name": "Test Sourdough",
-                    "quantity": 2,
-                    "price": 15.00
+                    "quantity": 1,
+                    "price": 12.50,
+                    "pickup_date": "2025-01-15"
                 }
             ]
         }
