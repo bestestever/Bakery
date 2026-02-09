@@ -9,7 +9,6 @@ import {
   Pencil,
   Trash2,
   Save,
-  X,
   LogOut,
   Eye,
   EyeOff,
@@ -88,15 +87,10 @@ export default function AdminPage() {
     name: "",
     description: "",
     price: "",
-    image_url: "",
-    active: true,
-    availability: [],
-  });
-
-  const [newDateAvail, setNewDateAvail] = useState({
-    date: "",
     quantity: "",
     max_quantity: "",
+    image_url: "",
+    active: true,
   });
 
   useEffect(() => {
@@ -156,57 +150,16 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddDateAvailability = () => {
-    if (!newDateAvail.date || !newDateAvail.quantity || !newDateAvail.max_quantity) {
-      toast.error("Please fill in all date availability fields");
-      return;
-    }
-    
-    const exists = newProduct.availability.find(a => a.date === newDateAvail.date);
-    if (exists) {
-      toast.error("This date already exists");
-      return;
-    }
-
-    setNewProduct({
-      ...newProduct,
-      availability: [
-        ...newProduct.availability,
-        {
-          date: newDateAvail.date,
-          quantity: parseInt(newDateAvail.quantity),
-          max_quantity: parseInt(newDateAvail.max_quantity),
-        },
-      ],
-    });
-    setNewDateAvail({ date: "", quantity: "", max_quantity: "" });
-  };
-
-  const handleRemoveDateAvailability = (date) => {
-    setNewProduct({
-      ...newProduct,
-      availability: newProduct.availability.filter(a => a.date !== date),
-    });
-  };
-
-  const handleUpdateDateQuantity = (date, field, value) => {
-    setNewProduct({
-      ...newProduct,
-      availability: newProduct.availability.map(a => 
-        a.date === date ? { ...a, [field]: parseInt(value) || 0 } : a
-      ),
-    });
-  };
-
   const handleSaveProduct = async () => {
     try {
       const productData = {
         name: newProduct.name,
         description: newProduct.description,
         price: parseFloat(newProduct.price),
+        quantity: parseInt(newProduct.quantity),
+        max_quantity: parseInt(newProduct.max_quantity),
         image_url: newProduct.image_url,
         active: newProduct.active,
-        availability: newProduct.availability,
       };
 
       if (editingProduct) {
@@ -223,9 +176,10 @@ export default function AdminPage() {
         name: "",
         description: "",
         price: "",
+        quantity: "",
+        max_quantity: "",
         image_url: "",
         active: true,
-        availability: [],
       });
       fetchData();
     } catch (error) {
@@ -240,9 +194,10 @@ export default function AdminPage() {
       name: product.name,
       description: product.description,
       price: product.price.toString(),
+      quantity: product.quantity.toString(),
+      max_quantity: product.max_quantity.toString(),
       image_url: product.image_url,
       active: product.active,
-      availability: product.availability || [],
     });
     setProductDialogOpen(true);
   };
@@ -267,6 +222,15 @@ export default function AdminPage() {
       fetchData();
     } catch (error) {
       toast.error("Failed to update product");
+    }
+  };
+
+  const handleQuickUpdateQuantity = async (productId, newQuantity) => {
+    try {
+      await axios.put(`${API}/products/${productId}`, { quantity: newQuantity });
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to update quantity");
     }
   };
 
@@ -355,11 +319,11 @@ export default function AdminPage() {
     }));
   };
 
-  // Group orders by pickup date
-  const groupOrdersByPickupDate = (ordersList) => {
+  // Group orders by order date
+  const groupOrdersByDate = (ordersList) => {
     const grouped = {};
     ordersList.forEach((order) => {
-      const date = order.pickup_date || "Unknown";
+      const date = order.order_date || order.created_at?.slice(0, 10) || "Unknown";
       if (!grouped[date]) {
         grouped[date] = [];
       }
@@ -368,7 +332,7 @@ export default function AdminPage() {
     return grouped;
   };
 
-  const groupedOrders = groupOrdersByPickupDate(showArchived ? archivedOrders : orders);
+  const groupedOrders = groupOrdersByDate(showArchived ? archivedOrders : orders);
 
   // Format date for display
   const formatDate = (dateStr) => {
@@ -383,12 +347,6 @@ export default function AdminPage() {
     } catch {
       return dateStr;
     }
-  };
-
-  // Get total quantity across all dates for a product
-  const getTotalQuantity = (product) => {
-    if (!product.availability || product.availability.length === 0) return 0;
-    return product.availability.reduce((sum, a) => sum + a.quantity, 0);
   };
 
   // Login Screen
@@ -523,9 +481,10 @@ export default function AdminPage() {
                             name: "",
                             description: "",
                             price: "",
+                            quantity: "",
+                            max_quantity: "",
                             image_url: "",
                             active: true,
-                            availability: [],
                           });
                         }}
                         className="btn-primary text-white rounded-xl"
@@ -535,7 +494,7 @@ export default function AdminPage() {
                         Add Product
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" data-testid="product-dialog">
+                    <DialogContent className="sm:max-w-md" data-testid="product-dialog">
                       <DialogHeader>
                         <DialogTitle className="font-heading">
                           {editingProduct ? "Edit Product" : "Add New Product"}
@@ -595,6 +554,34 @@ export default function AdminPage() {
                             />
                           </div>
                         </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label>Available Qty</Label>
+                            <Input
+                              type="number"
+                              value={newProduct.quantity}
+                              onChange={(e) =>
+                                setNewProduct({ ...newProduct, quantity: e.target.value })
+                              }
+                              placeholder="10"
+                              className="mt-1 rounded-lg"
+                              data-testid="product-quantity-input"
+                            />
+                          </div>
+                          <div>
+                            <Label>Max Qty (sell-out limit)</Label>
+                            <Input
+                              type="number"
+                              value={newProduct.max_quantity}
+                              onChange={(e) =>
+                                setNewProduct({ ...newProduct, max_quantity: e.target.value })
+                              }
+                              placeholder="10"
+                              className="mt-1 rounded-lg"
+                              data-testid="product-max-quantity-input"
+                            />
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={newProduct.active}
@@ -605,98 +592,6 @@ export default function AdminPage() {
                           />
                           <Label>Active (visible in shop)</Label>
                         </div>
-                        
-                        {/* Date Availability Section */}
-                        <div className="border-t pt-4 mt-4">
-                          <Label className="text-base font-semibold">Date Availability</Label>
-                          <p className="text-xs text-stone-500 mb-3">Add dates when this item is available and set quantities for each date</p>
-                          
-                          {/* Existing dates */}
-                          {newProduct.availability.length > 0 && (
-                            <div className="space-y-2 mb-4">
-                              {newProduct.availability
-                                .sort((a, b) => a.date.localeCompare(b.date))
-                                .map((avail) => (
-                                <div key={avail.date} className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg">
-                                  <span className="text-sm font-medium min-w-[100px]">
-                                    {formatDate(avail.date)}
-                                  </span>
-                                  <Input
-                                    type="number"
-                                    value={avail.quantity}
-                                    onChange={(e) => handleUpdateDateQuantity(avail.date, "quantity", e.target.value)}
-                                    className="w-20 h-8 text-center rounded"
-                                    min="0"
-                                    data-testid={`avail-qty-${avail.date}`}
-                                  />
-                                  <span className="text-stone-500">/</span>
-                                  <Input
-                                    type="number"
-                                    value={avail.max_quantity}
-                                    onChange={(e) => handleUpdateDateQuantity(avail.date, "max_quantity", e.target.value)}
-                                    className="w-20 h-8 text-center rounded"
-                                    min="0"
-                                    data-testid={`avail-max-${avail.date}`}
-                                  />
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleRemoveDateAvailability(avail.date)}
-                                    className="text-red-600 h-8 w-8 p-0"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          
-                          {/* Add new date */}
-                          <div className="flex items-end gap-2">
-                            <div className="flex-1">
-                              <Label className="text-xs">Date</Label>
-                              <Input
-                                type="date"
-                                value={newDateAvail.date}
-                                onChange={(e) => setNewDateAvail({ ...newDateAvail, date: e.target.value })}
-                                className="mt-1 rounded-lg"
-                                data-testid="new-avail-date"
-                              />
-                            </div>
-                            <div className="w-20">
-                              <Label className="text-xs">Qty</Label>
-                              <Input
-                                type="number"
-                                value={newDateAvail.quantity}
-                                onChange={(e) => setNewDateAvail({ ...newDateAvail, quantity: e.target.value })}
-                                placeholder="10"
-                                className="mt-1 rounded-lg"
-                                data-testid="new-avail-qty"
-                              />
-                            </div>
-                            <div className="w-20">
-                              <Label className="text-xs">Max</Label>
-                              <Input
-                                type="number"
-                                value={newDateAvail.max_quantity}
-                                onChange={(e) => setNewDateAvail({ ...newDateAvail, max_quantity: e.target.value })}
-                                placeholder="10"
-                                className="mt-1 rounded-lg"
-                                data-testid="new-avail-max"
-                              />
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={handleAddDateAvailability}
-                              className="rounded-lg"
-                              data-testid="add-date-btn"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-
                         <div className="flex gap-3 pt-4">
                           <Button
                             variant="outline"
@@ -730,7 +625,7 @@ export default function AdminPage() {
                       <TableRow>
                         <TableHead>Product</TableHead>
                         <TableHead>Price</TableHead>
-                        <TableHead>Dates & Stock</TableHead>
+                        <TableHead>Stock</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -760,26 +655,24 @@ export default function AdminPage() {
                             ${product.price.toFixed(2)}
                           </TableCell>
                           <TableCell>
-                            {product.availability && product.availability.length > 0 ? (
-                              <div className="space-y-1">
-                                {product.availability
-                                  .sort((a, b) => a.date.localeCompare(b.date))
-                                  .map((avail) => (
-                                  <div key={avail.date} className="text-xs flex items-center gap-2">
-                                    <Calendar className="w-3 h-3 text-stone-400" />
-                                    <span className="text-stone-600">{avail.date}</span>
-                                    <Badge variant={avail.quantity > 0 ? "secondary" : "destructive"} className="text-xs">
-                                      {avail.quantity}/{avail.max_quantity}
-                                    </Badge>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-stone-400 text-sm">No dates set</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                value={product.quantity}
+                                onChange={(e) =>
+                                  handleQuickUpdateQuantity(product.id, parseInt(e.target.value))
+                                }
+                                className="w-16 h-8 text-center rounded-lg"
+                                min="0"
+                                data-testid={`product-qty-${product.id}`}
+                              />
+                              <span className="text-stone-500 text-sm">
+                                / {product.max_quantity}
+                              </span>
+                            </div>
                           </TableCell>
                           <TableCell>
-                            {getTotalQuantity(product) <= 0 ? (
+                            {product.quantity <= 0 ? (
                               <Badge variant="destructive" className="bg-red-100 text-red-700">
                                 Sold Out
                               </Badge>
@@ -1096,7 +989,7 @@ export default function AdminPage() {
               </Dialog>
             </TabsContent>
 
-            {/* Stats Tab - Now shows orders grouped by pickup date */}
+            {/* Stats Tab */}
             <TabsContent value="stats">
               <div className="space-y-6">
                 {/* Totals */}
@@ -1245,10 +1138,10 @@ export default function AdminPage() {
                   </Card>
                 </div>
 
-                {/* Orders by Pickup Date */}
+                {/* Orders by Date */}
                 <div>
                   <h2 className="font-heading text-xl font-semibold text-stone-900 mb-4">
-                    Orders by Pickup Date
+                    Orders by Date
                   </h2>
                   {stats?.by_date?.length === 0 ? (
                     <Card>
