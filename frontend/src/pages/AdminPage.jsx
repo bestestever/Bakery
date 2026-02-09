@@ -155,9 +155,9 @@ export default function AdminPage() {
       const productData = {
         name: newProduct.name,
         description: newProduct.description,
-        price: parseFloat(newProduct.price),
-        quantity: parseInt(newProduct.quantity),
-        max_quantity: parseInt(newProduct.max_quantity),
+        price: parseFloat(newProduct.price) || 0,
+        quantity: parseInt(newProduct.quantity) || 0,
+        max_quantity: parseInt(newProduct.max_quantity) || 0,
         image_url: newProduct.image_url,
         active: newProduct.active,
       };
