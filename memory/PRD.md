@@ -35,14 +35,34 @@ URL that I can send to people for an online shop with 5 to 10 customizable optio
 2. **Admin Panel** (`/admin`)
    - Password protection (default: bakery2024)
    - Products tab: Add/edit/delete products, quick quantity updates, toggle active
-   - Orders tab: View all orders, mark complete/cancelled
+   - Orders tab: View all orders, mark complete/cancelled, **archive/restore orders**, grouped by date
+   - **Stats tab**: This Week, Previous Week, All Time revenue and order counts with daily breakdown
    - Settings tab: Shop name, weekly date, pickup info, payment info, email message
 
 3. **Backend APIs**
    - Products: GET/POST/PUT/DELETE
-   - Orders: POST (with quantity reduction), GET, status updates
+   - Orders: POST (with quantity reduction), GET (with archive filter), status updates, archive/unarchive, delete
+   - **Stats**: GET /api/orders/stats - revenue tracking, order counts by week
    - Settings: GET/PUT
    - Admin login
+
+## What's Been Implemented (Feb 9, 2026)
+1. **Order Archiving**
+   - Archive old orders to keep active list clean
+   - Toggle between Active/Archived orders view
+   - Restore archived orders if needed
+   - Permanently delete archived orders
+
+2. **Orders Grouped by Date**
+   - Orders displayed in date sections with calendar headers
+   - Better organization for weekly order management
+
+3. **Stats Page**
+   - This Week: Revenue, total orders, completed, pending, cancelled
+   - Previous Week: Same metrics for comparison
+   - All Time: Cumulative stats
+   - Daily breakdown for each week
+   - Stats update automatically when orders are cancelled/deleted
 
 ## Prioritized Backlog
 ### P0 (Critical) - DONE
