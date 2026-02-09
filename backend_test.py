@@ -366,7 +366,7 @@ class BakeryAPITester:
         return success1 and success2 and archived_found and success3 and success4 and active_found and success5 and success6
 
     def test_stats_endpoint(self):
-        """Test order stats endpoint"""
+        """Test order stats endpoint with pickup date grouping"""
         success, stats = self.run_test(
             "Get Order Stats",
             "GET",
@@ -377,40 +377,39 @@ class BakeryAPITester:
         if not success:
             return False
         
-        # Verify stats structure
-        required_keys = ['current_week', 'previous_week', 'all_time']
+        # Verify stats structure for new pickup date grouping
+        required_keys = ['by_date', 'totals']
         for key in required_keys:
             if key not in stats:
                 print(f"❌ Missing key '{key}' in stats response")
                 return False
         
-        # Verify current_week structure
-        current_week = stats.get('current_week', {})
-        week_keys = ['total_orders', 'completed_orders', 'cancelled_orders', 'pending_orders', 'total_revenue', 'completed_revenue']
-        for key in week_keys:
-            if key not in current_week:
-                print(f"❌ Missing key '{key}' in current_week stats")
+        # Verify totals structure
+        totals = stats.get('totals', {})
+        totals_keys = ['total_orders', 'completed_orders', 'cancelled_orders', 'pending_orders', 'total_revenue', 'completed_revenue']
+        for key in totals_keys:
+            if key not in totals:
+                print(f"❌ Missing key '{key}' in totals stats")
                 return False
         
-        # Verify previous_week structure  
-        previous_week = stats.get('previous_week', {})
-        for key in week_keys:
-            if key not in previous_week:
-                print(f"❌ Missing key '{key}' in previous_week stats")
-                return False
+        # Verify by_date structure (should be array of date stats)
+        by_date = stats.get('by_date', [])
+        if not isinstance(by_date, list):
+            print(f"❌ by_date should be a list, got {type(by_date)}")
+            return False
         
-        # Verify all_time structure
-        all_time = stats.get('all_time', {})
-        all_time_keys = ['total_orders', 'completed_orders', 'cancelled_orders', 'total_revenue', 'completed_revenue']
-        for key in all_time_keys:
-            if key not in all_time:
-                print(f"❌ Missing key '{key}' in all_time stats")
-                return False
+        # If there are date stats, verify structure
+        if len(by_date) > 0:
+            date_stat = by_date[0]
+            date_keys = ['date', 'total_orders', 'completed_orders', 'cancelled_orders', 'pending_orders', 'total_revenue', 'completed_revenue', 'orders']
+            for key in date_keys:
+                if key not in date_stat:
+                    print(f"❌ Missing key '{key}' in date stats")
+                    return False
         
         print(f"✅ Stats structure validated successfully")
-        print(f"   Current week: {current_week['total_orders']} orders, ${current_week['total_revenue']:.2f} revenue")
-        print(f"   Previous week: {previous_week['total_orders']} orders, ${previous_week['total_revenue']:.2f} revenue") 
-        print(f"   All time: {all_time['total_orders']} orders, ${all_time['total_revenue']:.2f} revenue")
+        print(f"   Total orders: {totals['total_orders']}, Total revenue: ${totals['total_revenue']:.2f}")
+        print(f"   Date groups: {len(by_date)}")
         
         return True
 
