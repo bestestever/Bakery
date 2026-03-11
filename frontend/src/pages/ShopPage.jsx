@@ -449,11 +449,6 @@ export default function ShopPage() {
                         {product.description}
                       </p>
                       <div className="flex items-center justify-between">
-                        {!isSoldOut && (
-                          <Badge variant="secondary" className="text-xs" data-testid={`stock-badge-${product.id}`}>
-                            {availableQty} left
-                          </Badge>
-                        )}
                         <Button
                           onClick={() => addToCart(product)}
                           disabled={isSoldOut || availableQty <= 0}
