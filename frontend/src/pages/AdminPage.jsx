@@ -1273,6 +1273,21 @@ export default function AdminPage() {
                     />
                   </div>
                   <div>
+                    <Label className="text-stone-700">Headline</Label>
+                    <Input
+                      value={settings.headline || ""}
+                      onChange={(e) =>
+                        setSettings({ ...settings, headline: e.target.value })
+                      }
+                      placeholder="Fresh Baked Weekly"
+                      className="mt-1 rounded-lg"
+                      data-testid="settings-headline"
+                    />
+                    <p className="text-xs text-stone-500 mt-1">
+                      The main text displayed at the top of your shop
+                    </p>
+                  </div>
+                  <div>
                     <Label className="text-stone-700">Pickup Information</Label>
                     <Textarea
                       value={settings.pickup_info || ""}
