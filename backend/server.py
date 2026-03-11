@@ -98,12 +98,14 @@ class Order(BaseModel):
 class ShopSettings(BaseModel):
     id: str = "shop_settings"
     shop_name: str = "Weekly Bakery"
+    headline: str = "Fresh Baked Weekly"
     pickup_info: str = "Pickup available Saturday 10am-2pm at 123 Main Street"
     payment_info: str = "Payment via Venmo @bakery or cash at pickup"
     email_message: str = "Thank you for your order! We look forward to seeing you."
 
 class ShopSettingsUpdate(BaseModel):
     shop_name: Optional[str] = None
+    headline: Optional[str] = None
     pickup_info: Optional[str] = None
     payment_info: Optional[str] = None
     email_message: Optional[str] = None
