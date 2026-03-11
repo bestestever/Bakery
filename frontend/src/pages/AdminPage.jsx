@@ -726,6 +726,42 @@ export default function AdminPage() {
 
             {/* Orders Tab */}
             <TabsContent value="orders">
+              {/* Items Summary for Active Orders */}
+              {!showArchived && orders.length > 0 && (
+                <div className="admin-card mb-6">
+                  <div className="p-4 border-b border-stone-200">
+                    <h3 className="font-heading text-lg font-semibold text-stone-900">
+                      Items Summary
+                    </h3>
+                  </div>
+                  <div className="p-4">
+                    <div className="flex flex-wrap gap-3">
+                      {(() => {
+                        const itemTotals = {};
+                        orders.forEach(order => {
+                          if (order.status !== "cancelled") {
+                            order.items.forEach(item => {
+                              if (!itemTotals[item.product_name]) {
+                                itemTotals[item.product_name] = 0;
+                              }
+                              itemTotals[item.product_name] += item.quantity;
+                            });
+                          }
+                        });
+                        return Object.entries(itemTotals)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([name, qty]) => (
+                            <div key={name} className="flex items-center gap-2 bg-stone-100 px-3 py-2 rounded-lg">
+                              <span className="font-bold text-orange-700">{qty}x</span>
+                              <span className="text-stone-700">{name}</span>
+                            </div>
+                          ));
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="admin-card">
                 <div className="p-6 border-b border-stone-200 flex items-center justify-between">
                   <h2 className="font-heading text-xl font-semibold text-stone-900">
@@ -772,96 +808,79 @@ export default function AdminPage() {
                             {dateOrders.length} order{dateOrders.length !== 1 ? "s" : ""}
                           </Badge>
                         </div>
-                        <div className="divide-y divide-stone-200">
+                        <div className="divide-y divide-stone-100">
                           {dateOrders.map((order) => (
-                            <div key={order.id} className="p-6" data-testid={`order-${order.id}`}>
-                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                                <div>
-                                  <div className="flex items-center gap-3 mb-2">
-                                    <h3 className="font-medium text-stone-900">
-                                      {order.customer_name}
-                                    </h3>
-                                    <Badge
-                                      className={
-                                        order.status === "completed"
-                                          ? "bg-green-100 text-green-700"
-                                          : order.status === "cancelled"
-                                          ? "bg-red-100 text-red-700"
-                                          : "bg-yellow-100 text-yellow-700"
-                                      }
-                                    >
-                                      {order.status}
-                                    </Badge>
+                            <Collapsible key={order.id}>
+                              <div className="px-6 py-3" data-testid={`order-${order.id}`}>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <CollapsibleTrigger asChild>
+                                      <button className="flex items-center gap-3 flex-1 text-left hover:bg-stone-50 -ml-2 pl-2 py-1 rounded-lg transition-colors">
+                                        <span className="font-medium text-stone-900">{order.customer_name}</span>
+                                        <Badge
+                                          className={
+                                            order.status === "completed"
+                                              ? "bg-green-100 text-green-700"
+                                              : order.status === "cancelled"
+                                              ? "bg-red-100 text-red-700"
+                                              : "bg-yellow-100 text-yellow-700"
+                                          }
+                                        >
+                                          {order.status}
+                                        </Badge>
+                                        {order.notes && (
+                                          <Badge className="bg-amber-100 text-amber-700">
+                                            📝 Note
+                                          </Badge>
+                                        )}
+                                        <span className="text-stone-500 text-sm">
+                                          {order.items.map(i => `${i.quantity}x ${i.product_name}`).join(", ")}
+                                        </span>
+                                        <ChevronDown className="w-4 h-4 text-stone-400 ml-auto" />
+                                      </button>
+                                    </CollapsibleTrigger>
                                   </div>
-                                  <p className="text-sm text-stone-600">{order.email}</p>
-                                  <p className="text-sm text-stone-600">{order.phone}</p>
-                                  {order.notes && (
-                                    <p className="text-sm text-stone-500 mt-2 italic">
-                                      "{order.notes}"
-                                    </p>
-                                  )}
-                                  <div className="mt-3 space-y-1">
-                                    {order.items.map((item, idx) => (
-                                      <p key={idx} className="text-sm text-stone-700">
-                                        {item.quantity}x {item.product_name} - ${(item.price * item.quantity).toFixed(2)}
-                                      </p>
-                                    ))}
-                                    <p className="font-medium text-stone-900 mt-2">
-                                      Total: ${order.total.toFixed(2)}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col gap-2 sm:items-end">
-                                  <p className="text-xs text-stone-500">
-                                    {new Date(order.created_at).toLocaleString()}
-                                  </p>
-                                  <div className="flex gap-2 flex-wrap">
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleEditOrder(order)}
-                                      className="rounded-lg"
-                                      data-testid={`edit-order-${order.id}`}
-                                    >
-                                      <Pencil className="w-4 h-4 mr-1" />
-                                      Edit
-                                    </Button>
+                                  <div className="flex items-center gap-2 ml-4">
                                     {!showArchived && (
                                       <>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleUpdateOrderStatus(order.id, "completed")}
                                           disabled={order.status === "completed"}
-                                          className="rounded-lg text-green-700"
+                                          className="h-8 w-8 p-0 text-green-700"
+                                          title="Complete"
                                           data-testid={`complete-order-${order.id}`}
                                         >
                                           <CheckCircle className="w-4 h-4" />
                                         </Button>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleUpdateOrderStatus(order.id, "cancelled")}
                                           disabled={order.status === "cancelled"}
-                                          className="rounded-lg text-red-700"
+                                          className="h-8 w-8 p-0 text-red-700"
+                                          title="Cancel"
                                           data-testid={`cancel-order-${order.id}`}
                                         >
                                           <XCircle className="w-4 h-4" />
                                         </Button>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleArchiveOrder(order.id)}
-                                          className="rounded-lg"
+                                          className="h-8 w-8 p-0"
+                                          title="Archive"
                                           data-testid={`archive-order-${order.id}`}
                                         >
                                           <Archive className="w-4 h-4" />
                                         </Button>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleDeleteOrder(order.id)}
-                                          className="rounded-lg text-red-700"
+                                          className="h-8 w-8 p-0 text-red-700"
+                                          title="Delete"
                                           data-testid={`delete-active-order-${order.id}`}
                                         >
                                           <Trash2 className="w-4 h-4" />
@@ -871,19 +890,21 @@ export default function AdminPage() {
                                     {showArchived && (
                                       <>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleUnarchiveOrder(order.id)}
-                                          className="rounded-lg"
+                                          className="h-8 w-8 p-0"
+                                          title="Restore"
                                           data-testid={`unarchive-order-${order.id}`}
                                         >
                                           <ArchiveRestore className="w-4 h-4" />
                                         </Button>
                                         <Button
-                                          variant="outline"
+                                          variant="ghost"
                                           size="sm"
                                           onClick={() => handleDeleteOrder(order.id)}
-                                          className="rounded-lg text-red-700"
+                                          className="h-8 w-8 p-0 text-red-700"
+                                          title="Delete"
                                           data-testid={`delete-order-${order.id}`}
                                         >
                                           <Trash2 className="w-4 h-4" />
@@ -892,8 +913,54 @@ export default function AdminPage() {
                                     )}
                                   </div>
                                 </div>
+                                <CollapsibleContent>
+                                  <div className="mt-3 pt-3 border-t border-stone-100 space-y-2">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-stone-500">Email:</span>
+                                        <span className="ml-2 text-stone-700">{order.email}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-stone-500">Phone:</span>
+                                        <span className="ml-2 text-stone-700">{order.phone}</span>
+                                      </div>
+                                    </div>
+                                    {order.notes && (
+                                      <div className="bg-amber-50 p-3 rounded-lg">
+                                        <span className="text-amber-800 font-medium">Special Request:</span>
+                                        <p className="text-amber-700 mt-1">"{order.notes}"</p>
+                                      </div>
+                                    )}
+                                    <div className="pt-2">
+                                      <p className="text-sm text-stone-500">Items:</p>
+                                      {order.items.map((item, idx) => (
+                                        <p key={idx} className="text-sm text-stone-700">
+                                          {item.quantity}x {item.product_name} - ${(item.price * item.quantity).toFixed(2)}
+                                        </p>
+                                      ))}
+                                      <p className="font-medium text-stone-900 mt-2">
+                                        Total: ${order.total.toFixed(2)}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-2">
+                                      <p className="text-xs text-stone-500">
+                                        Ordered: {new Date(order.created_at).toLocaleString()}
+                                      </p>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => handleEditOrder(order)}
+                                        className="rounded-lg"
+                                        data-testid={`edit-order-${order.id}`}
+                                      >
+                                        <Pencil className="w-4 h-4 mr-1" />
+                                        Edit
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </CollapsibleContent>
                               </div>
-                            </div>
+                            </Collapsible>
                           ))}
                         </div>
                       </div>
