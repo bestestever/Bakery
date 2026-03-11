@@ -386,7 +386,7 @@ export default function ShopPage() {
       <section className="hero-section">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="font-heading text-4xl sm:text-5xl font-bold text-stone-900 mb-4 animate-fade-in">
-            Fresh Baked Weekly
+            {settings.headline || "Fresh Baked Weekly"}
           </h2>
           {settings.pickup_info && (
             <p className="text-stone-500 mt-2 animate-fade-in stagger-2">
